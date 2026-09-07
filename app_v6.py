@@ -13,24 +13,7 @@ if not api_key:
     st.stop()
 
 genai.configure(api_key=api_key)
-
-# Account me active Gemini model ko automatically dhoondhna
-@st.cache_resource
-def get_working_model():
-    try:
-        available = [m.name for m in genai.list_models() if "generateContent" in m.supported_generation_methods]
-        # Flash model ko pehle preference do
-        for m in available:
-            if "flash" in m.lower():
-                return genai.GenerativeModel(m)
-        # Agar flash na mile toh jo pehla generateContent model ho
-        if available:
-            return genai.GenerativeModel(available[0])
-    except Exception as e:
-        st.error(f"Models list karne me error: {e}")
-    return genai.GenerativeModel("gemini-1.5-flash-002")
-
-model = get_working_model()
+model = genai.GenerativeModel("gemini-3.6-flash")
 
 uploaded_file = st.sidebar.file_uploader("Mandi parchi ya register ki photo dalein", type=["jpg", "jpeg", "png"])
 
