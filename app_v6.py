@@ -29,7 +29,7 @@ def split_image_into_horizontal_stripes(image: Image.Image, stripe_count: int = 
         stripes.append(stripe)
     return stripes
 
-def ocr(image: Image.Image, model: str = "llama-3.2-90b-vision-preview") -> str:
+def ocr(image: Image.Image, model: str = "llama-3.2-11b-vision-preview") -> str:
     groq_llm = ChatGroq(
         groq_api_key=GROQ_API_KEY,
         model_name=model,
@@ -126,7 +126,7 @@ if uploaded_file is not None:
             status_box.markdown(f"**Processing Stripe {i}, Run {run} ({int(progress * 100)}%)...**")
             sleep(0.1)  # Simulating processing time
 
-            stripe_markdown = ocr(stripe, model="llama-3.2-90b-vision-preview")
+            stripe_markdown = ocr(stripe, model="llama-3.2-11b-vision-preview")
             markdown_runs.append(stripe_markdown)
 
     progress_bar.progress(1.0)
