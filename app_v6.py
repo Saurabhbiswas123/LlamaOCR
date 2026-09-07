@@ -13,13 +13,14 @@ if not api_key:
     st.stop()
 
 genai.configure(api_key=api_key)
-model = genai.GenerativeModel("gemini-1.5-flash")
+# Model name with -latest for robust v1beta routing
+model = genai.GenerativeModel("gemini-1.5-flash-latest")
 
 uploaded_file = st.sidebar.file_uploader("Mandi parchi ya register ki photo dalein", type=["jpg", "jpeg", "png"])
 
 if uploaded_file:
     image = Image.open(uploaded_file)
-    st.image(image, caption="Uploaded Image", use_container_width=True)
+    st.image(image, caption="Uploaded Image")
 
     if st.button("Extract Data to Table"):
         with st.spinner("Handwritten data scan ho raha hai..."):
@@ -48,4 +49,4 @@ if uploaded_file:
                     )
             except Exception:
                 pass
-    
+                
