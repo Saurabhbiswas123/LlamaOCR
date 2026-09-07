@@ -13,8 +13,24 @@ if not api_key:
     st.stop()
 
 genai.configure(api_key=api_key)
-# Model name with -latest for robust v1beta routing
-model = genai.GenerativeModel("gemini-1.5-flash-latest")
+
+# Account me active Gemini model ko automatically dhoondhna
+@st.cache_resource
+def get_working_model():
+    try:
+        available = [m.name for m in genai.list_models() if "generateContent" in m.supported_generation_methods]
+        # Flash model ko pehle preference do
+        for m in available:
+            if "flash" in m.lower():
+                return genai.GenerativeModel(m)
+        # Agar flash na mile toh jo pehla generateContent model ho
+        if available:
+            return genai.GenerativeModel(available[0])
+    except Exception as e:
+        st.error(f"Models list karne me error: {e}")
+    return genai.GenerativeModel("gemini-1.5-flash-002")
+
+model = get_working_model()
 
 uploaded_file = st.sidebar.file_uploader("Mandi parchi ya register ki photo dalein", type=["jpg", "jpeg", "png"])
 
@@ -30,10 +46,10 @@ if uploaded_file:
             Columns should typically be: [S.No, Date, Name/Details, Weight/Qty, Rate, Total Amount].
             Only return the markdown table, no introductory or conversational text.
             """
-            response = model.generate_content([prompt, image])
-            st.markdown(response.text)
-
             try:
+                response = model.generate_content([prompt, image])
+                st.markdown(response.text)
+
                 lines = [line.strip() for line in response.text.strip().split("\n") if "|" in line]
                 if len(lines) > 2:
                     raw_data = [[c.strip() for c in line.split("|")[1:-1]] for line in lines]
@@ -47,6 +63,6 @@ if uploaded_file:
                         file_name="mandi_ledger_data.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     )
-            except Exception:
-                pass
+            except Exception as e:
+                st.error(f"Processing Error: {e}")
                 
