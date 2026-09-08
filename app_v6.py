@@ -71,7 +71,7 @@ def run_forensic_dual_pass(file_part):
     DO NOT autocorrect human math errors on paper; report what is actually written so our deterministic Python engine can catch mistakes.
     If handwriting is cut or faded, mark faded_or_unclear=True.
     """
-    models = ["gemini-2.5-flash", "gemini-2.5-flash-lite"]
+    models = ["gemini-3.5-flash-lite", "gemini-2.5-flash"]
     last_err = None
 
     for m in models:
@@ -246,7 +246,7 @@ else:
             """
             try:
                 res = client.models.generate_content(
-                    model="gemini-2.5-flash",
+                    model="gemini-3.5-flash-lite",
                     contents=[prompt, "Doc 1:", build_part(d1), "Doc 2:", build_part(d2)]
                 )
                 st.markdown(res.text, unsafe_allow_html=True)
