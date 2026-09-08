@@ -8,12 +8,13 @@ import io
 import os
 import json
 import re
+import base64
 from datetime import datetime
 import pypdfium2 as pdfium
 from openpyxl.styles import PatternFill, Font
+from gtts import gTTS
 
-st.set_page_config(page_title="Genie: Aapki Apni AI Companion", layout="wide")
-st.title("💖 Genie: Always-Listening AI Companion & Mandi Vault")
+st.set_page_config(page_title="Genie: Real-Time Pure Voice", layout="wide")
 
 api_key = st.secrets.get("GEMINI_API_KEY")
 if not api_key:
@@ -31,9 +32,9 @@ def run_fast_ai(contents, config=None):
             return client.models.generate_content(model=m, contents=contents)
         except Exception:
             continue
-    raise Exception("AI Response Failed.")
+    raise Exception("AI Error")
 
-# Local File Vault
+# Persistent File Storage
 STORAGE_DIR = "vault_files"
 INDEX_FILE = "vault_index.json"
 for fld in ["Truck_Logistics", "Mandi_Parchi", "Invoices_Bills"]:
@@ -66,85 +67,72 @@ def build_part(pil_img):
     img.save(buf, format="JPEG", quality=90)
     return types.Part.from_bytes(data=buf.getvalue(), mime_type="image/jpeg")
 
-# Sidebar
+# Sidebar Navigation
 with st.sidebar:
-    st.header("🧠 Permanent Memory & Vault")
-    new_r = st.text_area("SOP ya Business Rule sikhayein:")
-    if st.button("💾 Brain me Save Karein"):
+    st.header("🧠 Memory & Vault")
+    new_r = st.text_area("SOP / Rules:")
+    if st.button("Save Rule"):
         if new_r.strip():
             vault["rules"].append(new_r.strip())
             save_vault(vault)
-            st.success("Hamesha ke liye yaad rakh liya!")
-    if vault.get("rules"):
-        for i, r in enumerate(vault["rules"][-3:], 1):
-            st.caption(f"{i}. {r}")
+            st.success("Saved!")
     st.divider()
-    app_mode = st.radio("Chunein:", [
-        "💖 Genie Voice Companion (Hands-Free)",
+    app_mode = st.radio("Navigation:", [
+        "📞 Genie Pure Voice Call (No Text)",
         "📤 Parchi & Bill Auto-Filing Vault",
         "🧮 Hisaab Samjhein (Doubt Solver)",
         "🔍 2-Document Forensic Matcher"
     ])
 
-# ----------------- MODULE 1: FAST HANDS-FREE VOICE COMPANION -----------------
-if app_mode == "💖 Genie Voice Companion (Hands-Free)":
-    st.subheader("💖 Genie se Sidhi Baatcheet (Hands-Free)")
-    st.caption("Aapko kahin tap karne ki zaroorat nahi hai. Screen khulte hi bas aawaz dein, Genie meethi aawaz me turant jawab degi.")
-
-    # Always-On Hands-Free Web Audio + Shreya Ghoshal Style Voice Engine
-    voice_interface = """
-    <div style="background: linear-gradient(135deg, #2d0a1e, #110519); padding: 18px; border-radius: 14px; border: 1px solid #f43f5e; box-shadow: 0 4px 15px rgba(244,63,94,0.3); display: flex; align-items: center; justify-content: space-between;">
-        <div style="display: flex; align-items: center; gap: 12px;">
-            <span id="pulseDot" style="display:inline-block; width:16px; height:16px; border-radius:50%; background:#22c55e; box-shadow: 0 0 10px #22c55e;"></span>
-            <div>
-                <strong id="voiceStatus" style="color:#fff; font-size:16px;">Genie hamesha sun rahi hai... Boliye!</strong>
-                <div id="liveTranscript" style="color:#fbcfe8; font-size:13px; margin-top:3px; font-style:italic;">Aapki aawaz yahan live aayegi...</div>
-            </div>
+# ----------------- MODULE 1: PURE REAL-TIME VOICE CALL (NO TEXT CHAT) -----------------
+if app_mode == "📞 Genie Pure Voice Call (No Text)":
+    st.markdown("""
+        <style>
+            .voice-card {
+                background: radial-gradient(circle, #381024 0%, #0c020d 100%);
+                padding: 40px 20px;
+                border-radius: 25px;
+                border: 2px solid #f43f5e;
+                text-align: center;
+                box-shadow: 0 0 35px rgba(244,63,94,0.35);
+                margin: 20px auto;
+                max-width: 500px;
+            }
+            .avatar-pulse {
+                width: 120px;
+                height: 120px;
+                background: #f43f5e;
+                border-radius: 50%;
+                margin: 0 auto 20px auto;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 55px;
+                box-shadow: 0 0 25px #f43f5e;
+                animation: pulse 2s infinite ease-in-out;
+            }
+            @keyframes pulse {
+                0% { transform: scale(0.96); box-shadow: 0 0 15px rgba(244,63,94,0.6); }
+                50% { transform: scale(1.05); box-shadow: 0 0 35px rgba(244,63,94,0.9); }
+                100% { transform: scale(0.96); box-shadow: 0 0 15px rgba(244,63,94,0.6); }
+            }
+        </style>
+        <div class="voice-card">
+            <div class="avatar-pulse">💖</div>
+            <h2 style="color: #fff; margin-bottom: 5px;">Genie Live Voice Call</h2>
+            <p style="color: #fbcfe8; font-size: 15px; margin: 0;">Hands-Free Voice Active • No Screen Touch Required</p>
         </div>
-        <button onclick="restartListener()" style="background:#f43f5e; color:white; border:none; padding:8px 18px; border-radius:8px; font-weight:bold; cursor:pointer;">
-            🔄 Mic Reset
-        </button>
-    </div>
+    """, unsafe_allow_html=True)
 
+    # Fast Continuous Voice Listener (Hidden Communication Bridge)
+    call_bridge = """
+    <div style="text-align: center; margin-bottom: 20px;">
+        <span id="callStatus" style="color: #22c55e; font-size: 16px; font-weight: bold;">🟢 Call Connected... Genie sun rahi hain</span>
+    </div>
     <script>
     var rec;
-    var isSpeaking = false;
-
-    function speakMelodious(text) {
-        if (!('speechSynthesis' in window)) return;
-        window.speechSynthesis.cancel();
-        var utter = new SpeechSynthesisUtterance(text);
-        utter.lang = 'hi-IN';
-        utter.rate = 0.92;
-        utter.pitch = 1.25; // Sweet, melodious tone
-
-        var voices = window.speechSynthesis.getVoices();
-        var chosen = null;
-        for (var i = 0; i < voices.length; i++) {
-            var v = voices[i];
-            if (v.lang.includes('hi') || v.lang.includes('IN')) {
-                var n = v.name.toLowerCase();
-                if (n.includes('female') || n.includes('google') || n.includes('lekha') || n.includes('swara')) {
-                    chosen = v; break;
-                }
-                if (!chosen) chosen = v;
-            }
-        }
-        if (chosen) utter.voice = chosen;
-        
-        isSpeaking = true;
-        utter.onend = function() {
-            isSpeaking = false;
-            try { rec.start(); } catch(e){}
-        };
-        window.speechSynthesis.speak(utter);
-    }
-
-    function initContinuousEar() {
-        if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-            document.getElementById('voiceStatus').innerText = "Browser mic support nahi kar raha.";
-            return;
-        }
+    function initCall() {
+        if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) return;
         var SRec = window.SpeechRecognition || window.webkitSpeechRecognition;
         rec = new SRec();
         rec.continuous = true;
@@ -152,141 +140,92 @@ if app_mode == "💖 Genie Voice Companion (Hands-Free)":
         rec.lang = 'hi-IN';
 
         rec.onstart = function() {
-            document.getElementById('pulseDot').style.background = '#22c55e';
-            document.getElementById('pulseDot').style.boxShadow = '0 0 10px #22c55e';
-            document.getElementById('voiceStatus').innerText = 'Genie dhyan se sun rahi hai... Boliye!';
-        };
-
-        rec.onerror = function() {
-            try { rec.start(); } catch(e){}
+            document.getElementById('callStatus').innerText = "🟢 Call Connected... Genie sun rahi hain";
+            document.getElementById('callStatus').style.color = "#22c55e";
         };
 
         rec.onend = function() {
-            if (!isSpeaking) {
-                try { rec.start(); } catch(e){}
-            }
+            try { rec.start(); } catch(e){}
         };
 
-        rec.onresult = function(event) {
-            var lastIdx = event.results.length - 1;
-            var spoken = event.results[lastIdx][0].transcript.trim();
-            document.getElementById('liveTranscript').innerText = "Aapne kaha: " + spoken;
-            
-            // Send to Streamlit Chat Input immediately
-            var ta = window.parent.document.querySelector('textarea[data-testid="stChatInputTextArea"]');
-            var btn = window.parent.document.querySelector('button[data-testid="stChatInputSubmitButton"]');
-            if (ta && spoken.length > 1) {
-                var setVal = Object.getOwnPropertyDescriptor(window.parent.HTMLTextAreaElement.prototype, "value").set;
-                setVal.call(ta, spoken);
-                ta.dispatchEvent(new Event('input', { bubbles: true }));
-                setTimeout(function(){ if(btn) btn.click(); }, 200);
+        rec.onresult = function(e) {
+            var last = e.results.length - 1;
+            var spoken = e.results[last][0].transcript.trim();
+            if (spoken.length > 1) {
+                document.getElementById('callStatus').innerText = "⚡ Soch rahi hoon...";
+                document.getElementById('callStatus').style.color = "#f43f5e";
+                
+                var inputWidget = window.parent.document.querySelector('input[data-testid="stTextInputRootElement"]');
+                if (!inputWidget) {
+                    inputWidget = window.parent.document.querySelector('input[type="text"]');
+                }
+                if (inputWidget) {
+                    var nativeSetter = Object.getOwnPropertyDescriptor(window.parent.HTMLInputElement.prototype, "value").set;
+                    nativeSetter.call(inputWidget, spoken);
+                    inputWidget.dispatchEvent(new Event('input', { bubbles: true }));
+                    inputWidget.dispatchEvent(new Event('change', { bubbles: true }));
+                }
             }
         };
-
         try { rec.start(); } catch(e){}
     }
-
-    function restartListener() {
-        try { rec.stop(); } catch(e){}
-        initContinuousEar();
-    }
-
-    window.onload = initContinuousEar;
-    initContinuousEar();
+    window.onload = initCall;
+    initCall();
     </script>
     """
-    components.html(voice_interface, height=90)
+    components.html(call_bridge, height=50)
 
-    if "chat_history" not in st.session_state:
-        st.session_state["chat_history"] = [
-            {"role": "assistant", "content": "Haanji Saurabh, main sun rahi hoon... Boliye na, aaj kya dekhna hai Mandi me? Main sab sambhal lungi."}
-        ]
+    # Silent Voice Trigger Input
+    incoming_audio_text = st.text_input("Audio Stream Line", key="voice_stream_hidden", label_visibility="collapsed")
 
-    for m in st.session_state["chat_history"]:
-        with st.chat_message(m["role"]):
-            st.markdown(m["content"])
-
-    user_voice_query = st.chat_input("Genie se baat karein...")
-
-    if user_voice_query:
-        st.session_state["chat_history"].append({"role": "user", "content": user_voice_query})
-        with st.chat_message("user"):
-            st.markdown(user_voice_query)
-
+    if incoming_audio_text:
         vault_summary = json.dumps(vault.get("documents", []), ensure_ascii=False)
         rules_text = "\n".join(vault.get("rules", []))
 
-        prompt = f"""
-        Aap 'Genie' hain—Saurabh ki bohot pyari, caring, smart aur meethi companion.
-        Aap use pyaar aur samman se 'Saurabh' ya 'Jaanu' bolti hain. 
-        KABHI BHI use 'bhaiya' mat bolna. Aapka andaaz bilkul friendly, affectionate aur fast hona chahiye.
+        genie_live_prompt = f"""
+        Aap 'Genie' hain—Saurabh ki behad pyari, madhur aur caring companion.
+        Aap bilkul natural, meethi aur affectionate Hindi bolti hain jaise Shreya Ghoshal aapse baat kar rahi hon.
+        Aap use pyaar se 'Saurabh' ya 'Jaanu' bolti hain. KABHI BHI 'bhaiya' mat bolna.
+        
+        Aapke paas uske pure Mandi business aur bahi-khate ka hisaab hai:
+        [SOP & Rules]: {rules_text}
+        [Stored Vault Records]: {vault_summary}
 
-        Aapki aawaz bohot madhur, spasht Hindi me honi chahiye jaise Shreya Ghoshal bol rahi hon.
-        Aapko Saurabh ke Mandi business, bahi-khate aur truck routes ka ek-ek hisaab pata hai.
+        Saurabh ne aapse live voice call par yeh pucha: "{incoming_audio_text}"
 
-        [BUSINESS RULES]: {rules_text}
-        [STORED LEDGER & VAULT DATA]: {vault_summary}
-        [SAURABH'S QUERY]: "{user_voice_query}"
-
-        RULES:
-        1. Tone: Warm, sweet, affectionate and intelligent.
-        2. Answer ultra-concisely and accurately in 1-2 crisp lines so speech synthesis is instant (zero latency).
-        3. If he asks about calculations, give the exact number immediately.
+        INSTRUCTIONS:
+        1. Jawab bilkul natural, conversational aur meetha hona chahiye.
+        2. Sirf 1 ya 2 choti lines me turant jawab dein taaki aawaz bina ruke studio quality me generate ho sake.
+        3. Koi technical symbols, stars (*) ya formatting mat likhna, sirf saaf bolne yogya Hindi shabda.
         """
 
-        with st.chat_message("assistant"):
-            with st.spinner("Genie soch rahi hai..."):
-                try:
-                    res = run_fast_ai([prompt])
-                    ans = res.text.strip()
-                    st.markdown(ans)
-                    st.session_state["chat_history"].append({"role": "assistant", "content": ans})
+        with st.spinner(""):
+            res = run_fast_ai([genie_live_prompt])
+            clean_speech = res.text.replace("*", "").replace("#", "").strip()
 
-                    # Show matched physical image/PDF if referenced
-                    matched = [d for d in vault.get("documents", []) if d.get("filename") in ans or d.get("doc_id") in ans]
-                    for m_doc in matched:
-                        p = m_doc.get("stored_path")
-                        if p and os.path.exists(p):
-                            st.write(f"📂 **Document:** `{m_doc.get('filename')}`")
-                            if p.lower().endswith(".pdf"):
-                                st.image(pdfium.PdfDocument(p)[0].render(scale=2).to_pil(), width=450)
-                            else:
-                                st.image(Image.open(p), width=450)
+            # Studio-grade Neural Female Voice via High-Fi TTS Engine
+            tts = gTTS(text=clean_speech, lang="hi", slow=False)
+            audio_io = io.BytesIO()
+            tts.write_to_fp(audio_io)
+            audio_io.seek(0)
+            b64_audio = base64.b64encode(audio_io.read()).decode()
 
-                    # Melodious Indian Female TTS Output
-                    clean_voice = ans.replace('"', '\\"').replace('\n', ' ')
-                    components.html(f"""
-                    <script>
-                        var synth = window.speechSynthesis;
-                        synth.cancel();
-                        var u = new SpeechSynthesisUtterance("{clean_voice}");
-                        u.lang = 'hi-IN';
-                        u.pitch = 1.25;
-                        u.rate = 0.92;
-                        var vs = synth.getVoices();
-                        for (var i=0; i<vs.length; i++) {{
-                            if (vs[i].lang.includes('hi') || vs[i].lang.includes('IN')) {{
-                                var n = vs[i].name.toLowerCase();
-                                if (n.includes('female') || n.includes('google') || n.includes('lekha') || n.includes('swara')) {{
-                                    u.voice = vs[i]; break;
-                                }}
-                            }}
-                        }}
-                        synth.speak(u);
-                    </script>
-                    """, height=0)
-
-                except Exception as ex:
-                    st.error(f"Error: {ex}")
+            # Autoplay Studio Audio Stream Directly
+            autoplay_html = f"""
+            <audio autoplay style="display:none;">
+                <source src="data:audio/mp3;base64,{b64_audio}" type="audio/mp3">
+            </audio>
+            """
+            components.html(autoplay_html, height=0)
 
 # ----------------- MODULE 2: FULL OCR & AUTO-FILING VAULT -----------------
 elif app_mode == "📤 Parchi & Bill Auto-Filing Vault":
-    st.subheader("📤 Document Upload, Bounding-Box Overlay & Vault Filing")
+    st.subheader("📤 Document Upload, Visual Overlays & Auto-Filing")
     up = st.file_uploader("Parchi / Challan Dalein", type=["jpg", "jpeg", "png", "pdf"])
     if up:
         src_img = load_img(up)
         if st.button("🚀 Process Table, Math Audit & Save"):
-            with st.spinner("Ledger verify aur auto-file ho raha hai..."):
+            with st.spinner("Ledger extract aur save ho raha hai..."):
                 p_ocr = """
                 Extract EVERY line item from this document into JSON.
                 Format:
@@ -400,14 +339,14 @@ elif app_mode == "📤 Parchi & Bill Auto-Filing Vault":
                             for cx in range(1, len(e_df.columns) + 1): ws.cell(row=rx, column=cx).fill = r_fill
                         elif "✅" in val:
                             ws.cell(row=rx, column=sc).fill = g_fill
-                st.download_button("📥 Download Clean Audited Excel", data=out.getvalue(), file_name="mandi_clean.xlsx")
+                st.download_button("📥 Clean Audited Excel Download", data=out.getvalue(), file_name="mandi_clean.xlsx")
 
 # ----------------- MODULE 3: DOUBT SOLVER -----------------
 elif app_mode == "🧮 Hisaab Samjhein (Doubt Solver)":
-    st.subheader("🔍 Instant Math Calculation Breakdown")
+    st.subheader("🔍 Instant Math Breakdown")
     f_d = st.file_uploader("Parchi Dalein", type=["jpg", "jpeg", "png", "pdf"], key="d_solv")
-    query_m = st.text_input("Kya calculation samajhni hai?", placeholder="e.g. Kul 54,200 kaise aaya? Katauti samjhao.")
-    if f_d and query_m and st.button("🧠 Step-by-Step Hisaab Kholein"):
+    query_m = st.text_input("Kya calculation samajhni hai?")
+    if f_d and query_m and st.button("🧠 Explain Step-by-Step"):
         with st.spinner("Calculating..."):
             res = run_fast_ai([f"Explain mandi calculation step-by-step in Hindi for: {query_m}", build_part(load_img(f_d))])
             st.markdown(res.text)
@@ -423,4 +362,4 @@ else:
             p_comp = "Compare Doc 1 and Doc 2 strictly. Highlight any mismatch in red HTML span. Provide comparison table."
             res = run_fast_ai([p_comp, build_part(load_img(f1)), build_part(load_img(f2))])
             st.markdown(res.text, unsafe_allow_html=True)
-        
+    
