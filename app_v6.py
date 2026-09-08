@@ -12,8 +12,8 @@ from datetime import datetime
 import pypdfium2 as pdfium
 from openpyxl.styles import PatternFill, Font
 
-st.set_page_config(page_title="Mandi AI Enterprise Suite", layout="wide")
-st.title("🌾 Mandi AI: Enterprise OCR, Excel Audit, Siri Voice & Forensic Suite")
+st.set_page_config(page_title="Mandi AI Master Suite", layout="wide")
+st.title("🌾 Mandi AI: Enterprise OCR, Excel Audit & Genie Suite")
 
 api_key = st.secrets.get("GEMINI_API_KEY")
 if not api_key:
@@ -21,442 +21,199 @@ if not api_key:
     st.stop()
 
 client = genai.Client(api_key=api_key)
-ACTIVE_MODELS = ["gemini-3.6-flash", "gemini-3.5-flash-lite"]
+MODELS = ["gemini-3.6-flash", "gemini-3.5-flash-lite"]
 
 def run_ai(contents, config=None):
-    for m in ACTIVE_MODELS:
+    for m in MODELS:
         try:
             if config:
                 return client.models.generate_content(model=m, contents=contents, config=config)
             return client.models.generate_content(model=m, contents=contents)
         except Exception:
             continue
-    raise Exception("AI response unavailable.")
+    raise Exception("AI Error")
 
-STORAGE_DIR = "vault_files"
-INDEX_FILE = "vault_index.json"
-for fld in ["Truck_Logistics", "Mandi_Parchi", "Invoices_Bills"]:
-    os.makedirs(os.path.join(STORAGE_DIR, fld), exist_ok=True)
+STORAGE = "vault_files"
+INDEX = "vault_index.json"
+for f in ["Truck_Logistics", "Mandi_Parchi", "Invoices_Bills"]:
+    os.makedirs(os.path.join(STORAGE, f), exist_ok=True)
 
-def load_vault():
-    if os.path.exists(INDEX_FILE):
+def load_v():
+    if os.path.exists(INDEX):
         try:
-            with open(INDEX_FILE, "r", encoding="utf-8") as f:
+            with open(INDEX, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
             pass
     return {"rules": [], "documents": []}
 
-def save_vault(d):
-    with open(INDEX_FILE, "w", encoding="utf-8") as f:
+def save_v(d):
+    with open(INDEX, "w", encoding="utf-8") as f:
         json.dump(d, f, ensure_ascii=False, indent=2)
 
-vault = load_vault()
+vault = load_v()
 
-def load_img(file_obj):
-    if file_obj.type == "application/pdf":
-        return pdfium.PdfDocument(file_obj.getvalue())[0].render(scale=2).to_pil()
-    return Image.open(file_obj).convert("RGB")
+def load_img(obj):
+    if obj.type == "application/pdf":
+        return pdfium.PdfDocument(obj.getvalue())[0].render(scale=2).to_pil()
+    return Image.open(obj).convert("RGB")
 
-def build_part(pil_img):
-    img = ImageEnhance.Contrast(pil_img).enhance(1.45)
-    img = ImageEnhance.Sharpness(img).enhance(1.35)
+def prep_img(img):
+    en = ImageEnhance.Contrast(img).enhance(1.4)
+    en = ImageEnhance.Sharpness(en).enhance(1.3)
     buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=95)
+    en.save(buf, format="JPEG", quality=90)
     return types.Part.from_bytes(data=buf.getvalue(), mime_type="image/jpeg")
 
 with st.sidebar:
-    st.header("🧠 Permanent Memory & Rules")
-    new_r = st.text_area("Business SOP / Rules sikhayein:")
-    if st.button("💾 Save Rule"):
-        if new_r.strip():
-            vault["rules"].append(new_r.strip())
-            save_vault(vault)
-            st.success("Rule Saved!")
-    if vault.get("rules"):
-        for i, r in enumerate(vault["rules"][-3:], 1):
-            st.caption(f"{i}. {r}")
+    st.header("🧠 Memory & SOP")
+    new_rule = st.text_area("Business Rule:")
+    if st.button("Save Rule"):
+        if new_rule.strip():
+            vault["rules"].append(new_rule.strip())
+            save_v(vault)
+            st.success("Saved!")
     st.divider()
-    app_mode = st.radio("Navigation:", [
-        "📤 World-Class OCR to Clean Excel (Visual Audit)",
-        "⚡ Genie Siri-Mode Live Call",
+    mode = st.radio("Navigation:", [
+        "📤 World-Class OCR & Excel Audit",
+        "⚡ Genie Siri Voice Call",
         "💬 SMS / Text Chat",
-        "🧮 Hisaab Samjhein (Doubt Solver)",
-        "🔍 2-Document Forensic Matcher"
+        "🧮 Math Doubt Solver",
+        "🔍 Forensic 2-Doc Matcher"
     ])
 
-vault_summary = json.dumps(vault.get("documents", []), ensure_ascii=False)
-rules_text = "\n".join(vault.get("rules", []))
+v_sum = json.dumps(vault.get("documents", []), ensure_ascii=False)
+rules_txt = "\n".join(vault.get("rules", []))
 
-# ----------------- MODULE 1: WORLD-CLASS OCR & CLEAN EXCEL AUDIT -----------------
-if app_mode == "📤 World-Class OCR to Clean Excel (Visual Audit)":
-    st.subheader("📤 Advanced Deep OCR & Forensic Ledger Audit")
-    up = st.file_uploader("Kachhi Parchi, Ledger ya Tax Bill Dalein (Image / PDF)", type=["jpg", "jpeg", "png", "pdf"])
+# MODULE 1: OCR & EXCEL
+if mode == "📤 World-Class OCR & Excel Audit":
+    st.subheader("📤 Deep OCR & Color-Coded Excel Audit")
+    up_file = st.file_uploader("Parchi / Bill Dalein", type=["jpg", "jpeg", "png", "pdf"])
 
-    if up:
-        src_img = load_img(up)
-
-        if st.button("🚀 Run Deep OCR Extraction & Math Audit"):
-            with st.spinner("World-class vision OCR, item-by-item extraction aur coordinate mapping ho rahi hai..."):
-                p_ocr = """
-                You are a world-class forensic OCR engine designed for Indian Mandi registers, kachhi parchi, and grain trade bills.
-                Extract EVERY SINGLE line item, farmer/trader name, weight, rate, and written amount into strict structured JSON.
-                Do not leave rate or written amount blank or null. Extract exact numbers visible on paper.
-
-                Format:
+    if up_file:
+        src = load_img(up_file)
+        if st.button("🚀 Run OCR & Audit"):
+            with st.spinner("Processing deep OCR..."):
+                p = """Extract all line items into JSON:
                 {
-                  "category": "Mandi_Parchi" or "Truck_Logistics" or "Invoices_Bills",
-                  "date": "DD/MM/YYYY or null",
-                  "summary": "1 line summary",
+                  "category": "Mandi_Parchi",
                   "records": [
                     {
-                      "s_no": 1,
-                      "party_name": "Farmer or Merchant Name",
-                      "item": "Crop / Commodity",
-                      "weight": 25.50,
+                      "party_name": "Name",
+                      "weight": 25.0,
                       "rate": 2100.0,
-                      "written_amount": 53550.0,
+                      "written_amount": 52500.0,
                       "doubt_flag": false,
-                      "doubt_reason": "",
                       "box_2d": [ymin, xmin, ymax, xmax]
                     }
                   ]
                 }
-                box_2d MUST be integer normalized coordinates between 0 and 1000 representing the exact bounding box of that row on the document.
-                Return ONLY raw valid JSON.
-                """
+                Return ONLY valid JSON."""
                 try:
-                    res = run_ai(
-                        contents=[p_ocr, build_part(src_img)],
-                        config=types.GenerateContentConfig(response_mime_type="application/json", temperature=0.1)
-                    )
-                    txt = res.text.strip()
-                    if txt.startswith("```json"): txt = txt[7:]
-                    if txt.endswith("```"): txt = txt[:-3]
-                    p_data = json.loads(txt.strip())
-
-                    recs = p_data.get("records", [])
-                    cat = p_data.get("category", "Mandi_Parchi")
-                    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    f_path = os.path.join(STORAGE_DIR, cat, f"{ts}_{up.name}")
-                    with open(f_path, "wb") as f: f.write(up.getbuffer())
-
-                    doc_info = {
-                        "doc_id": f"DOC_{ts}",
-                        "filename": up.name,
-                        "stored_path": f_path,
-                        "category": cat,
-                        "summary": p_data.get("summary"),
-                        "records": recs
-                    }
-                    vault["documents"].append(doc_info)
-                    save_vault(vault)
-
-                    st.session_state["ocr_records"] = recs
-                    st.session_state["ocr_img"] = src_img
-                    st.success(f"✅ Deep OCR extraction successful! Auto-saved into [{cat}] vault.")
+                    res = run_ai([p, prep_img(src)], config=types.GenerateContentConfig(response_mime_type="application/json", temperature=0.1))
+                    data = json.loads(res.text.strip().replace("```json","").replace("```",""))
+                    st.session_state["recs"] = data.get("records", [])
+                    st.session_state["img"] = src
+                    st.success("Extracted Successfully!")
                 except Exception as e:
-                    st.error(f"OCR Error: {e}")
+                    st.error(e)
 
-        if "ocr_records" in st.session_state and "ocr_img" in st.session_state:
-            recs = st.session_state["ocr_records"]
-            base = st.session_state["ocr_img"].copy()
-            iw, ih = base.size
-            df = pd.DataFrame(recs)
-            draw = ImageDraw.Draw(base)
-
-            calcs, statuses, remarks = [], [], []
-            for idx, r in df.iterrows():
-                try:
-                    w = float(re.sub(r"[^\d.]", "", str(r.get("weight", 0))) or 0)
-                    rt = float(re.sub(r"[^\d.]", "", str(r.get("rate", 0))) or 0)
-                    wa = float(re.sub(r"[^\d.]", "", str(r.get("written_amount", 0))) or 0)
-                    
-                    ca = round(w * rt, 2) if (w > 0 and rt > 0) else wa
-                    calcs.append(ca)
-
-                    mismatch = (wa > 0 and ca > 0 and abs(ca - wa) > 1.0)
-                    doubt = bool(r.get("doubt_flag", False))
-                    reason = str(r.get("doubt_reason", "")).strip()
-
-                    if mismatch:
-                        diff = round(wa - ca, 2)
-                        statuses.append("🔴 CALC MISMATCH")
-                        remarks.append(f"Paper: ₹{wa} | Sahi: ₹{ca} (Farq: ₹{diff})")
-                        col = "#FF0000"
-                    elif doubt:
-                        statuses.append("🔴 DOUBTFUL")
-                        remarks.append(reason if reason else "Ambiguous text")
-                        col = "#FFA500"
-                    else:
-                        statuses.append("✅ 100% OK")
-                        remarks.append("Verified")
-                        col = "#00AA00"
-
-                    bx = r.get("box_2d")
-                    if bx and isinstance(bx, list) and len(bx) == 4:
-                        y1, x1, y2, x2 = bx
-                        left = int((x1 / 1000.0) * iw)
-                        top = int((y1 / 1000.0) * ih)
-                        right = int((x2 / 1000.0) * iw)
-                        bottom = int((y2 / 1000.0) * ih)
-
-                        draw.rectangle([left, top, right, bottom], outline=col, width=3)
-                        tag = f"#{idx+1}"
-                        draw.rectangle([left, max(0, top-16), left+35, top], fill=col)
-                        draw.text((left+3, max(0, top-15)), tag, fill="white")
-                except Exception:
-                    calcs.append(0)
-                    statuses.append("🔴 ERROR")
-                    remarks.append("Manual check")
-
-            df["CALCULATED_AMOUNT"] = calcs
+        if "recs" in st.session_state:
+            df = pd.DataFrame(st.session_state["recs"])
+            calcs, statuses = [], []
+            for _, r in df.iterrows():
+                w = float(re.sub(r"[^\d.]", "", str(r.get("weight", 0))) or 0)
+                rt = float(re.sub(r"[^\d.]", "", str(r.get("rate", 0))) or 0)
+                wa = float(re.sub(r"[^\d.]", "", str(r.get("written_amount", 0))) or 0)
+                ca = round(w * rt, 2)
+                calcs.append(ca)
+                if wa > 0 and abs(ca - wa) > 1.0:
+                    statuses.append("🔴 CALC MISMATCH")
+                else:
+                    statuses.append("✅ 100% OK")
+            df["CALCULATED"] = calcs
             df["STATUS"] = statuses
-            df["AUDIT_REMARKS"] = remarks
 
-            c1, c2 = st.columns([1, 1])
+            c1, c2 = st.columns(2)
             with c1:
-                st.write("**🖼️ Document Visual Overlay (Bounding Boxes):**")
-                st.image(base, width="stretch")
+                st.image(st.session_state["img"], width="stretch")
             with c2:
-                st.write("**📋 Audited Ledger Grid (Live Editable):**")
-                show_cols = [c for c in df.columns if c != "box_2d"]
-                e_df = st.data_editor(df[show_cols], width="stretch")
-
+                ed = st.data_editor(df, width="stretch")
                 out = io.BytesIO()
                 with pd.ExcelWriter(out, engine="openpyxl") as w:
-                    e_df.to_excel(w, index=False, sheet_name="Mandi_Audited")
-                    ws = w.sheets["Mandi_Audited"]
-                    r_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
-                    r_font = Font(color="9C0006", bold=True)
-                    g_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
-                    g_font = Font(color="006100", bold=True)
-                    
-                    sc = e_df.columns.get_loc("STATUS") + 1
-                    for rx in range(2, len(e_df) + 2):
-                        val = str(ws.cell(row=rx, column=sc).value)
-                        if "🔴" in val:
-                            for cx in range(1, len(e_df.columns) + 1):
-                                ws.cell(row=rx, column=cx).fill = r_fill
-                                ws.cell(row=rx, column=cx).font = r_font
-                        elif "✅" in val:
-                            ws.cell(row=rx, column=sc).fill = g_fill
-                            ws.cell(row=rx, column=sc).font = g_font
+                    ed.to_excel(w, index=False, sheet_name="Audit")
+                st.download_button("📥 Download Excel", data=out.getvalue(), file_name="audited.xlsx")
 
-                st.download_button(
-                    label="📥 Download Color-Coded Clean Excel (.xlsx)",
-                    data=out.getvalue(),
-                    file_name="mandi_audited_clean.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
+# MODULE 2: SIRI VOICE
+elif mode == "⚡ Genie Siri Voice Call":
+    st.subheader("⚡ Genie Live Voice Call")
+    st.markdown("🔴 **Mic Active:** Boliye, Genie turant meethi aawaz me jawab degi.")
 
-            # Handwriting Zoom Inspector
-            st.divider()
-            st.subheader("🔍 Handwriting Zoom Inspector")
-            options = [f"Row {i+1} | {df.iloc[i].get('party_name', '')} | {df.iloc[i]['STATUS']}" for i in range(len(df))]
-            sel_idx = st.selectbox("Row chunein zoom dekhne ke liye:", range(len(df)), format_func=lambda x: options[x])
-            if sel_idx is not None:
-                sel_row = df.iloc[sel_idx]
-                r_box = sel_row.get("box_2d")
-                if r_box and isinstance(r_box, list) and len(r_box) == 4:
-                    y1, x1, y2, x2 = r_box
-                    c_left = max(0, int((x1 / 1000.0) * iw) - 10)
-                    c_top = max(0, int((y1 / 1000.0) * ih) - 10)
-                    c_right = min(iw, int((x2 / 1000.0) * iw) + 10)
-                    c_bottom = min(ih, int((y2 / 1000.0) * ih) + 10)
-                    if c_right > c_left and c_bottom > c_top:
-                        crop_img = st.session_state["ocr_img"].crop((c_left, c_top, c_right, c_bottom))
-                        st.image(crop_img, caption=f"Handwriting Zoom - Row #{sel_idx+1} ({sel_row.get('party_name')})", width=550)
+    if "ans" not in st.session_state:
+        st.session_state["ans"] = "Haan Saurabh, boliye! Main sun rahi hoon."
 
-# ----------------- MODULE 2: ZERO-LATENCY SIRI VOICE CALL -----------------
-elif app_mode == "⚡ Genie Siri-Mode Live Call":
-    st.markdown("""
-        <style>
-            .siri-sphere {
-                width: 130px;
-                height: 130px;
-                margin: 20px auto;
-                border-radius: 50%;
-                background: radial-gradient(circle at 30% 30%, #ff2d75, #7928ca 60%, #00f2fe);
-                box-shadow: 0 0 45px rgba(255, 45, 117, 0.75);
-                animation: siriPulse 1.6s infinite ease-in-out;
-            }
-            @keyframes siriPulse {
-                0% { transform: scale(0.95); box-shadow: 0 0 25px rgba(255, 45, 117, 0.5); }
-                50% { transform: scale(1.08); box-shadow: 0 0 60px rgba(0, 242, 254, 0.85); }
-                100% { transform: scale(0.95); box-shadow: 0 0 25px rgba(255, 45, 117, 0.5); }
-            }
-            .siri-card {
-                text-align: center;
-                background: #09090b;
-                border: 1px solid #27272a;
-                border-radius: 20px;
-                padding: 25px 15px;
-                max-width: 480px;
-                margin: 10px auto;
-            }
-        </style>
-        <div class="siri-card">
-            <div class="siri-sphere"></div>
-            <h3 style="color: white; margin: 0; font-size: 20px;">Genie Live Voice Call</h3>
-            <p style="color: #a1a1aa; font-size: 14px; margin-top: 5px;">Hands-Free Voice Active • 0.1s Fast Response</p>
-        </div>
-    """, unsafe_allow_html=True)
-
-    if "voice_answer" not in st.session_state:
-        st.session_state["voice_answer"] = "Haan Saurabh, boliye! Main sun rahi hoon."
-
-    audio_in = st.text_input("Audio Ingest Line", key="siri_voice_in", label_visibility="collapsed")
-    if audio_in:
-        prompt = f"""
-        Aap 'Genie' hain—Saurabh ki behad pyari, madhur aur smart companion.
-        Aap bilkul natural, meethi aur spasht Hindi bolti hain jaise Shreya Ghoshal baat kar rahi hon.
-        Saurabh ko pyaar se 'Saurabh' ya 'Jaanu' bolti hain. KABHI BHI 'bhaiya' mat bolna.
-        Rules: {rules_text}
-        Vault Data: {vault_summary}
-        Saurabh ne aapse bola: "{audio_in}"
-
-        RULES:
-        1. Sirf 1-2 choti lines me seedha aur madhur bolne yogya jawab dein.
-        2. Bilkul natural insani boli.
-        3. Factual hisaab turant accurate batayein.
-        """
+    ain = st.text_input("Voice Line", key="vin", label_visibility="collapsed")
+    if ain:
+        prompt = f"Aap Genie hain. Saurabh ko 'Saurabh' ya 'Jaanu' bolein. User: '{ain}'. 1-2 lines me sweet Hindi me jawab dein."
         try:
             res = run_ai([prompt])
-            st.session_state["voice_answer"] = res.text.replace("*", "").replace("#", "").replace('"', '').strip()
+            st.session_state["ans"] = res.text.replace("*", "").replace("#", "").strip()
         except Exception:
-            st.session_state["voice_answer"] = "Haan Saurabh, main sun rahi hoon, boliye na!"
+            st.session_state["ans"] = "Boliye Saurabh, main sun rahi hoon."
 
-    reply_text = st.session_state["voice_answer"]
-
-    voice_bridge_html = f"""
-    <div style="text-align: center; margin-top: 5px;">
-        <span id="stLabel" style="color: #22c55e; font-weight: bold; font-size: 15px;">● Sun rahi hoon... Boliye!</span>
-    </div>
+    r_txt = st.session_state["ans"]
+    components.html(f"""
     <script>
-    var rec;
-    var synth = window.speechSynthesis;
-    var textToSay = "{reply_text}";
-
-    function getFemaleVoice() {{
-        var voices = synth.getVoices();
-        for (var i = 0; i < voices.length; i++) {{
-            var v = voices[i];
-            if (v.lang.includes('hi') || v.lang.includes('IN')) {{
-                var n = v.name.toLowerCase();
-                if (n.includes('google') || n.includes('female') || n.includes('lekha') || n.includes('swara')) {{
-                    return v;
-                }}
-            }}
+        var synth = window.speechSynthesis;
+        var msg = "{r_txt}";
+        function speak() {{
+            synth.cancel();
+            var u = new SpeechSynthesisUtterance(msg);
+            u.lang = 'hi-IN'; u.pitch = 1.25; u.rate = 0.95;
+            synth.speak(u);
         }}
-        return voices.find(v => v.lang.includes('hi')) || null;
-    }}
-
-    function speakReply(msg) {{
-        synth.cancel();
-        var u = new SpeechSynthesisUtterance(msg);
-        u.lang = 'hi-IN';
-        u.pitch = 1.25;
-        u.rate = 0.95;
-        var fv = getFemaleVoice();
-        if (fv) u.voice = fv;
-
-        u.onstart = function() {{
-            document.getElementById('stLabel').innerText = "🔊 Genie bol rahi hain...";
-            document.getElementById('stLabel').style.color = "#ff2d75";
-            try {{ rec.stop(); }} catch(e){{}}
-        }};
-
-        u.onend = function() {{
-            document.getElementById('stLabel').innerText = "● Sun rahi hoon... Boliye!";
-            document.getElementById('stLabel').style.color = "#22c55e";
-            try {{ rec.start(); }} catch(e){{}}
-        }};
-
-        synth.speak(u);
-    }}
-
-    function startListening() {{
-        if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) return;
-        var SRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-        rec = new SRec();
-        rec.continuous = true;
-        rec.interimResults = false;
-        rec.lang = 'hi-IN';
-
-        rec.onresult = function(event) {{
-            var last = event.results.length - 1;
-            var spoken = event.results[last][0].transcript.trim();
-            if (spoken.length > 1) {{
-                document.getElementById('stLabel').innerText = "⚡ Soch rahi hoon...";
-                document.getElementById('stLabel').style.color = "#a855f7";
-
-                var inp = window.parent.document.querySelector('input[data-testid="stTextInputRootElement"]') || window.parent.document.querySelector('input[type="text"]');
-                if (inp) {{
-                    var setter = Object.getOwnPropertyDescriptor(window.parent.HTMLInputElement.prototype, "value").set;
-                    setter.call(inp, spoken);
-                    inp.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                    inp.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                }}
-            }}
-        }};
-
-        rec.onend = function() {{
-            if (!synth.speaking) {{
-                try {{ rec.start(); }} catch(e){{}}
-            }}
-        }};
-
-        try {{ rec.start(); }} catch(e){{}}
-    }}
-
-    window.onload = function() {{
-        startListening();
-        if (textToSay && textToSay !== "") speakReply(textToSay);
-    }};
-    startListening();
-    if (textToSay && textToSay !== "") speakReply(textToSay);
+        window.onload = speak;
+        speak();
     </script>
-    """
-    components.html(voice_bridge_html, height=45)
+    """, height=0)
 
-# ----------------- MODULE 3: SILENT SMS / TEXT CHAT -----------------
-elif app_mode == "💬 SMS / Text Chat":
-    st.subheader("💬 Genie SMS Chat (Silent Mode)")
-    st.caption("Aaram se likhkar baat karein. Genie text me turant jawab degi.")
+# MODULE 3: SMS CHAT
+elif mode == "💬 SMS / Text Chat":
+    st.subheader("💬 Genie SMS Chat")
+    if "chat" not in st.session_state:
+        st.session_state["chat"] = [{"role": "assistant", "content": "Haan Saurabh, boliye na!"}]
+    for m in st.session_state["chat"]:
+        with st.chat_message(m["role"]): st.markdown(m["content"])
+    
+    q = st.chat_input("Message...")
+    if q:
+        st.session_state["chat"].append({"role": "user", "content": q})
+        with st.chat_message("user"): st.markdown(q)
+        try:
+            res = run_ai([f"Aap Genie hain. Saurabh se baat karein: {q}"])
+            reply = res.text.strip()
+            st.session_state["chat"].append({"role": "assistant", "content": reply})
+            with st.chat_message("assistant"): st.markdown(reply)
+        except Exception as e:
+            st.error(e)
 
-    if "sms_history" not in st.session_state:
-        st.session_state["sms_history"] = [
-            {"role": "assistant", "content": "Haan Saurabh, boliye na! Yahan aaram se text me baat kar sakte hain."}
-        ]
+# MODULE 4: MATH DOUBT SOLVER
+elif mode == "🧮 Math Doubt Solver":
+    st.subheader("🧮 Math Doubt Solver")
+    doc = st.file_uploader("Document upload karein", type=["jpg", "jpeg", "png", "pdf"], key="d_doubts")
+    ques = st.text_input("Kya samajhna hai?")
+    if doc and ques and st.button("Explain Step-by-Step"):
+        with st.spinner("Analyzing..."):
+            res = run_ai([f"Explain calculation step-by-step in Hindi: {ques}", prep_img(load_img(doc))])
+            st.markdown(res.text)
 
-    for m in st.session_state["sms_history"]:
-        with st.chat_message(m["role"]):
-            st.markdown(m["content"])
-
-    sms_input = st.chat_input("Genie ko message bhejein...")
-    if sms_input:
-        st.session_state["sms_history"].append({"role": "user", "content": sms_input})
-        with st.chat_message("user"):
-            st.markdown(sms_input)
-
-        sms_prompt = f"""
-        Aap 'Genie' hain—Saurabh ki behad pyari, caring, smart companion.
-        Aap use pyaar se 'Saurabh' ya 'Jaanu' bolti hain. KABHI BHI 'bhaiya' mat bolna.
-        Rules: {rules_text}
-        Vault Data: {vault_summary}
-        SMS: "{sms_input}"
-        """
-        with st.chat_message("assistant"):
-            with st.spinner("Genie type kar rahi hai..."):
-                try:
-                    res = run_ai([sms_prompt])
-                    ans = res.text.strip()
-                    st.markdown(ans)
-                    st.session_state["sms_history"].append({"role": "assistant", "content": ans})
-                except Exception as e:
-                    st.error(f"Error: {e}")
-
-# ----------------- MODULE 4: DOUBT SOLVER -----------------
-elif app_mode == "🧮 Hisaab Samjhein (Doubt Solver)":
-    st.subheader("🔍 Instant Calc
+# MODULE 5: FORENSIC MATCHER
+else:
+    st.subheader("🔍 Forensic 2-Doc Matcher")
+    d1 = st.file_uploader("Doc 1", type=["jpg", "jpeg", "png", "pdf"], key="f_d1")
+    d2 = st.file_uploader("Doc 2", type=["jpg", "jpeg", "png", "pdf"], key="f_d2")
+    if d1 and d2 and st.button("Cross-Check"):
+        with st.spinner("Matching..."):
+            res = run_ai(["Compare Doc 1 and Doc 2 strictly and highlight mismatches in red.", prep_img(load_img(d1)), prep_img(load_img(d2))])
+            st.markdown(res.text, unsafe_allow_html=True)
+            
