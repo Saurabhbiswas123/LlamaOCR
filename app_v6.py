@@ -1,15 +1,19 @@
 import streamlit as st
+import streamlit.components.v1 as components
 from google import genai
 from google.genai import types
-from PIL import Image, ImageEnhance
+from PIL import Image, ImageEnhance, ImageDraw
 import pandas as pd
 import io
+import os
 import json
 import re
+from datetime import datetime
+import pypdfium2 as pdfium
 from openpyxl.styles import PatternFill, Font
 
-st.set_page_config(page_title="Forensic Mandi Ledger & Math Audit", layout="wide")
-st.title("🛡️ Enterprise Mandi OCR & Deep Arithmetic Verification Engine")
+st.set_page_config(page_title="Mandi AI Master Vault & Forensic OCR", layout="wide")
+st.title("🌾 Mandi AI: Enterprise Autonomous Storage, Vault & Forensic OCR")
 
 api_key = st.secrets.get("GEMINI_API_KEY")
 if not api_key:
@@ -18,236 +22,511 @@ if not api_key:
 
 client = genai.Client(api_key=api_key)
 
-def enhance_document(img_input):
-    img = img_input.convert("RGB")
-    img = ImageEnhance.Contrast(img).enhance(1.45)
-    img = ImageEnhance.Sharpness(img).enhance(1.35)
-    return img
+# ----------------- PHYSICAL FILE STORAGE & VAULT DIRECTORY -----------------
+STORAGE_DIR = "vault_files"
+INDEX_FILE = "vault_index.json"
 
-def build_part(uploaded_file):
-    if uploaded_file.type == "application/pdf":
-        return types.Part.from_bytes(data=uploaded_file.getvalue(), mime_type="application/pdf")
-    else:
-        pil_img = Image.open(uploaded_file)
-        enhanced = enhance_document(pil_img)
-        buffer = io.BytesIO()
-        enhanced.save(buffer, format="JPEG", quality=95)
-        return types.Part.from_bytes(data=buffer.getvalue(), mime_type="image/jpeg")
+os.makedirs(os.path.join(STORAGE_DIR, "Truck_Logistics"), exist_ok=True)
+os.makedirs(os.path.join(STORAGE_DIR, "Mandi_Parchi"), exist_ok=True)
+os.makedirs(os.path.join(STORAGE_DIR, "Invoices_Bills"), exist_ok=True)
+os.makedirs(os.path.join(STORAGE_DIR, "General_Docs"), exist_ok=True)
 
-AUDIT_SCHEMA = {
-    "type": "OBJECT",
-    "properties": {
-        "written_grand_total": {
-            "type": "NUMBER",
-            "description": "The net or grand total written at the bottom of the parchi/page, if present. Else 0."
-        },
-        "records": {
-            "type": "ARRAY",
-            "items": {
-                "type": "OBJECT",
-                "properties": {
-                    "s_no": {"type": "STRING"},
-                    "date": {"type": "STRING"},
-                    "party_name": {"type": "STRING"},
-                    "crop_item": {"type": "STRING"},
-                    "bags": {"type": "STRING"},
-                    "weight": {"type": "NUMBER"},
-                    "rate": {"type": "NUMBER"},
-                    "reported_amount": {"type": "NUMBER"},
-                    "faded_or_unclear": {"type": "BOOLEAN"},
-                    "doubt_details": {"type": "STRING"}
-                },
-                "required": ["party_name", "weight", "rate", "reported_amount", "faded_or_unclear"]
-            }
-        }
-    },
-    "required": ["records"]
-}
-
-def run_forensic_dual_pass(file_part):
-    system_instruction = """
-    You are a forensic auditor inspecting Indian Mandi receipts, kachhi parchi, and commercial registers.
-    Extract every line item and the written grand total at the bottom exactly as written on paper.
-    DO NOT autocorrect human math errors on paper; report what is actually written so our deterministic Python engine can catch mistakes.
-    If handwriting is cut or faded, mark faded_or_unclear=True.
-    """
-    models = ["gemini-3.5-flash-lite", "gemini-2.5-flash"]
-    last_err = None
-
-    for m in models:
+def load_vault_index():
+    if os.path.exists(INDEX_FILE):
         try:
-            res1 = client.models.generate_content(
-                model=m,
-                contents=[system_instruction, file_part],
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=AUDIT_SCHEMA,
-                    temperature=0.1
-                )
-            )
-            data1 = json.loads(res1.text)
+            with open(INDEX_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {
+        "business_knowledge": [],
+        "documents": []
+    }
 
-            res2 = client.models.generate_content(
-                model=m,
-                contents=["Re-verify all written numbers and totals to eliminate hallucination:", file_part],
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=AUDIT_SCHEMA,
-                    temperature=0.2
-                )
-            )
-            data2 = json.loads(res2.text)
-            return data1, data2
-        except Exception as e:
-            last_err = e
-            continue
+def save_vault_index(data):
+    with open(INDEX_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
-    raise Exception(f"Extraction Pipeline Failure: {last_err}")
+vault = load_vault_index()
 
-app_mode = st.sidebar.radio("Functionality:", ["Zero-Error Ledger & Math Audit", "2-Document Forensic Matcher"])
+def load_source_image(file_obj):
+    if file_obj.type == "application/pdf":
+        pdf = pdfium.PdfDocument(file_obj.getvalue())
+        page = pdf[0]
+        return page.render(scale=2).to_pil()
+    else:
+        return Image.open(file_obj).convert("RGB")
 
-# ----------------- MODE 1: Ledger & Math Audit -----------------
-if app_mode == "Zero-Error Ledger & Math Audit":
-    up_file = st.sidebar.file_uploader("Document upload karein (Image/PDF)", type=["jpg", "jpeg", "png", "pdf"])
+def build_part_from_pil(pil_img):
+    enhanced = ImageEnhance.Contrast(pil_img).enhance(1.45)
+    enhanced = ImageEnhance.Sharpness(enhanced).enhance(1.35)
+    buf = io.BytesIO()
+    enhanced.save(buf, format="JPEG", quality=95)
+    return types.Part.from_bytes(data=buf.getvalue(), mime_type="image/jpeg")
+
+# Sidebar: Brain SOP & Navigation
+with st.sidebar:
+    st.header("🧠 Permanent Memory & Rules")
+    new_sop = st.text_area("Business SOP / Rule sikhayein:")
+    if st.button("💾 Brain me Lock Karein"):
+        if new_sop.strip():
+            vault["business_knowledge"].append({
+                "rule": new_sop.strip(),
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M")
+            })
+            save_vault_index(vault)
+            st.success("Rule permanently save ho gaya!")
+
+    if vault["business_knowledge"]:
+        st.subheader("Saved Business Rules:")
+        for idx, r in enumerate(vault["business_knowledge"][-3:], start=1):
+            st.caption(f"{idx}. {r.get('rule')}")
+
+    st.divider()
+    app_mode = st.radio("Navigation:", [
+        "Upload, OCR & Auto-Filing Vault",
+        "Autonomous Smart Retrieval (Search & Recall)",
+        "Explain Math (Doubt Solver)",
+        "2-Document Forensic Matcher"
+    ])
+
+# ----------------- MODULE 1: Full Ledger OCR, Auto-Filing & Persistent Storage -----------------
+if app_mode == "Upload, OCR & Auto-Filing Vault":
+    st.subheader("📤 Upload Document (Auto-Filing & Forensic Math Verification)")
+    up_file = st.file_uploader("Document upload karein (Parchi / Bill / Challan)", type=["jpg", "jpeg", "png", "pdf"])
 
     if up_file:
-        col_prev, col_stat = st.columns([1, 2])
-        with col_prev:
-            if up_file.type != "application/pdf":
-                st.image(Image.open(up_file), caption="Source Parchi", use_container_width=True)
-            else:
-                st.info(f"📄 PDF Loaded: {up_file.name}")
+        source_image = load_source_image(up_file)
 
-        if st.button("🚀 Run Forensic Math Cross-Audit"):
-            with st.spinner("Handwriting extraction + Strict Mathematical Recalculation chal raha hai..."):
+        if st.button("🚀 Process, Verify & Auto-Save into Vault"):
+            with st.spinner("AI extraction, bounding box detection aur autonomous filing chal raha hai..."):
+                prompt = """
+                You are a senior forensic accountant for Indian Mandi registers.
+                1. Read every line item, farmer name, weight, rate, and written amount into JSON.
+                2. Extract bounding box coordinates: [ymin, xmin, ymax, xmax] (0 to 1000 scale).
+                3. Classify document into exactly one category: 'Truck_Logistics', 'Mandi_Parchi', or 'Invoices_Bills'.
+                4. Extract truck number, date, and overall document summary.
+
+                JSON Output Format:
+                {
+                  "category": "Truck_Logistics" or "Mandi_Parchi" or "Invoices_Bills",
+                  "doc_summary": "Short 1-line summary of what this document is",
+                  "date": "DD/MM/YYYY or null",
+                  "truck_no": "string or null",
+                  "parties_involved": ["list of names"],
+                  "records": [
+                    {
+                      "s_no": "1",
+                      "party_name": "Farmer/Trader Name",
+                      "item": "Makka / Crop",
+                      "weight": 24.50,
+                      "rate": 2200.0,
+                      "written_amount": 53900.0,
+                      "doubt_flag": false,
+                      "doubt_reason": "",
+                      "box_2d": [ymin, xmin, ymax, xmax]
+                    }
+                  ]
+                }
+                Return ONLY valid raw JSON.
+                """
                 try:
-                    payload = build_part(up_file)
-                    p1_obj, p2_obj = run_forensic_dual_pass(payload)
-
-                    df = pd.DataFrame(p1_obj.get("records", []))
-                    p2_records = p2_obj.get("records", [])
-                    written_grand_total = float(p1_obj.get("written_grand_total", 0) or 0)
-
-                    status_list = []
-                    correct_calc_list = []
-                    remarks_list = []
-                    recomputed_running_sum = 0.0
-                    math_errors_count = 0
-
-                    for idx in range(len(df)):
-                        row1 = df.iloc[idx]
-                        w = float(row1.get("weight", 0) or 0)
-                        r = float(row1.get("rate", 0) or 0)
-                        rep_amt = float(row1.get("reported_amount", 0) or 0)
-                        exact_amt = round(w * r, 2)
-                        correct_calc_list.append(exact_amt)
-                        recomputed_running_sum += exact_amt
-
-                        inconsistent = False
-                        if idx < len(p2_records):
-                            row2 = p2_records[idx]
-                            if abs(w - float(row2.get("weight", 0) or 0)) > 0.001 or abs(r - float(row2.get("rate", 0) or 0)) > 0.001:
-                                inconsistent = True
-
-                        math_mismatch = (rep_amt > 0 and w > 0 and r > 0 and abs(exact_amt - rep_amt) > 1.0)
-                        is_faded = bool(row1.get("faded_or_unclear", False))
-
-                        if math_mismatch:
-                            math_errors_count += 1
-                            diff = round(rep_amt - exact_amt, 2)
-                            status_list.append("🔴 MATH ERROR ON PAPER")
-                            remarks_list.append(f"Paper par: ₹{rep_amt} | Asli: ₹{exact_amt} (Farq: ₹{diff})")
-                        elif inconsistent:
-                            status_list.append("🔴 READING CONFLICT")
-                            remarks_list.append("Vision ambiguity between Pass 1 and 2.")
-                        elif is_faded:
-                            status_list.append("🟠 UNCLEAR INK")
-                            remarks_list.append(str(row1.get("doubt_details", "Faded handwriting")))
-                        else:
-                            status_list.append("✅ 100% CORRECT")
-                            remarks_list.append("Exact Match")
-
-                    df["CORRECT_CALCULATED_AMOUNT"] = correct_calc_list
-                    df["AUDIT_STATUS"] = status_list
-                    df["AUDIT_REMARKS"] = remarks_list
-
-                    st.divider()
-                    if written_grand_total > 0:
-                        total_diff = round(written_grand_total - recomputed_running_sum, 2)
-                        if abs(total_diff) > 1.0:
-                            st.error(
-                                f"🚨 **Parchi ka Grand Total Galat Hai!**\n\n"
-                                f"- **Paper par likha jod:** ₹{written_grand_total:,.2f}\n"
-                                f"- **Sahi hisaab jod:** ₹{recomputed_running_sum:,.2f}\n"
-                                f"- **Farq (Discrepancy):** ₹{total_diff:,.2f}"
-                            )
-                        else:
-                            st.success(f"✅ **Grand Total Verified:** ₹{written_grand_total:,.2f} 100% match hai!")
-                    else:
-                        st.info(f"📊 **Calculated Grand Total:** ₹{recomputed_running_sum:,.2f}")
-
-                    if math_errors_count > 0:
-                        st.warning(f"⚠️ **{math_errors_count} entries me multiplication/rate calculation ki galti mili hai!**")
-
-                    st.subheader("Audited Ledger Grid (Live Editable)")
-                    edited_df = st.data_editor(df, use_container_width=True)
-
-                    output = io.BytesIO()
-                    with pd.ExcelWriter(output, engine="openpyxl") as writer:
-                        edited_df.to_excel(writer, index=False, sheet_name="Mandi_Verified_Ledger")
-                        ws = writer.sheets["Mandi_Verified_Ledger"]
-
-                        red_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
-                        red_font = Font(color="9C0006", bold=True)
-                        green_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
-                        green_font = Font(color="006100", bold=True)
-
-                        status_col_idx = edited_df.columns.get_loc("AUDIT_STATUS") + 1
-
-                        for r_idx in range(2, len(edited_df) + 2):
-                            cell_val = str(ws.cell(row=r_idx, column=status_col_idx).value)
-                            if "🔴" in cell_val:
-                                for c_idx in range(1, len(edited_df.columns) + 1):
-                                    ws.cell(row=r_idx, column=c_idx).fill = red_fill
-                                    ws.cell(row=r_idx, column=c_idx).font = red_font
-                            elif "✅" in cell_val:
-                                ws.cell(row=r_idx, column=status_col_idx).fill = green_fill
-                                ws.cell(row=r_idx, column=status_col_idx).font = green_font
-
-                    st.download_button(
-                        label="📥 Download Mathematical Audit Excel (.xlsx)",
-                        data=output.getvalue(),
-                        file_name="mandi_math_audited.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    res = client.models.generate_content(
+                        model="gemini-2.5-flash",
+                        contents=[prompt, build_part_from_pil(source_image)],
+                        config=types.GenerateContentConfig(
+                            response_mime_type="application/json",
+                            temperature=0.1
+                        )
                     )
 
+                    clean_text = res.text.strip()
+                    if clean_text.startswith("```json"): clean_text = clean_text[7:]
+                    if clean_text.endswith("```"): clean_text = clean_text[:-3]
+
+                    parsed = json.loads(clean_text.strip())
+                    records = parsed.get("records", [])
+                    category = parsed.get("category", "Mandi_Parchi")
+
+                    timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    safe_filename = f"{timestamp_str}_{up_file.name}"
+                    save_folder = os.path.join(STORAGE_DIR, category)
+                    os.makedirs(save_folder, exist_ok=True)
+                    physical_path = os.path.join(save_folder, safe_filename)
+
+                    with open(physical_path, "wb") as f:
+                        f.write(up_file.getbuffer())
+
+                    doc_entry = {
+                        "doc_id": f"DOC_{timestamp_str}",
+                        "filename": up_file.name,
+                        "stored_path": physical_path,
+                        "category": category,
+                        "uploaded_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "date": parsed.get("date"),
+                        "truck_no": parsed.get("truck_no"),
+                        "summary": parsed.get("doc_summary"),
+                        "parties": parsed.get("parties_involved", []),
+                        "records_count": len(records),
+                        "records": records
+                    }
+
+                    vault["documents"].append(doc_entry)
+                    save_vault_index(vault)
+
+                    st.session_state["active_records"] = records
+                    st.session_state["base_image"] = source_image
+                    st.session_state["current_doc"] = doc_entry
+
+                    st.success(f"🎉 Document 100% processed aur auto-archive ho gaya folder: [{category}] me!")
+
                 except Exception as ex:
-                    st.error(f"Audit Error: {ex}")
+                    st.error(f"Processing Error: {ex}")
 
-# ----------------- MODE 2: 2-Document Matcher -----------------
-else:
-    st.subheader("🔍 Forensic 2-Document Difference Reconciliation (0.0001% Variance)")
-    c1, c2 = st.columns(2)
-    with c1:
-        d1 = st.file_uploader("Document 1 (Ledger/Parchi)", type=["jpg", "jpeg", "png", "pdf"], key="d1_forensic")
-    with c2:
-        d2 = st.file_uploader("Document 2 (Bill/Challan)", type=["jpg", "jpeg", "png", "pdf"], key="d2_forensic")
+        # Post-Processing & Rendering
+        if "active_records" in st.session_state and "base_image" in st.session_state:
+            records = st.session_state["active_records"]
+            base_img = st.session_state["base_image"].copy()
+            img_w, img_h = base_img.size
 
-    if d1 and d2 and st.button("Execute Cross-Audit"):
-        with st.spinner("Analyzing micro-deviations between both documents..."):
-            prompt = """
-            Compare Document 1 and Document 2 strictly down to 0.0001% variance.
-            Highlight ANY mismatch between files using:
-            `<span style='background-color: #ff4b4b; color: white; padding: 2px 5px; border-radius: 3px;'>🔴 VALUE (MISMATCH)</span>`.
-            Provide:
-            1. Status: 100% MATCH or CRITICAL DISCREPANCIES DETECTED
-            2. Detailed Markdown Comparison Table
-            3. Quantity & Financial Reconciliation Summary
+            df = pd.DataFrame(records)
+            draw = ImageDraw.Draw(base_img)
+
+            calculated_amounts = []
+            audit_status = []
+            audit_remarks = []
+
+            for idx, row in df.iterrows():
+                try:
+                    w = float(re.sub(r"[^\d.]", "", str(row.get("weight", 0))) or 0)
+                    r = float(re.sub(r"[^\d.]", "", str(row.get("rate", 0))) or 0)
+                    written_amt = float(re.sub(r"[^\d.]", "", str(row.get("written_amount", 0))) or 0)
+                    correct_amt = round(w * r, 2)
+                    calculated_amounts.append(correct_amt)
+
+                    is_doubt = bool(row.get("doubt_flag", False))
+                    reason = str(row.get("doubt_reason", "")).strip()
+
+                    is_math_mismatch = (written_amt > 0 and correct_amt > 0 and abs(correct_amt - written_amt) > 1.0)
+                    
+                    if is_math_mismatch:
+                        diff = round(written_amt - correct_amt, 2)
+                        st_text = "🔴 CALC MISMATCH"
+                        rm_text = f"Paper: ₹{written_amt} | Sahi: ₹{correct_amt} (Farq: ₹{diff})"
+                        box_color = "#FF0000"
+                    elif is_doubt:
+                        st_text = "🔴 DOUBTFUL INK"
+                        rm_text = reason if reason else "Ambiguous text"
+                        box_color = "#FFA500"
+                    else:
+                        st_text = "✅ 100% OK"
+                        rm_text = "Verified"
+                        box_color = "#00AA00"
+
+                    audit_status.append(st_text)
+                    audit_remarks.append(rm_text)
+
+                    box = row.get("box_2d")
+                    if box and isinstance(box, list) and len(box) == 4:
+                        ymin, xmin, ymax, xmax = box
+                        left = int((xmin / 1000.0) * img_w)
+                        top = int((ymin / 1000.0) * img_h)
+                        right = int((xmax / 1000.0) * img_w)
+                        bottom = int((ymax / 1000.0) * img_h)
+
+                        draw.rectangle([left, top, right, bottom], outline=box_color, width=3)
+                        tag_text = f"#{idx+1}: {'ERR' if (is_math_mismatch or is_doubt) else 'OK'}"
+                        draw.rectangle([left, max(0, top-18), left+60, top], fill=box_color)
+                        draw.text((left+3, max(0, top-16)), tag_text, fill="white")
+
+                except Exception:
+                    calculated_amounts.append(0)
+                    audit_status.append("🔴 ERROR")
+                    audit_remarks.append("Review manually")
+
+            df["CALCULATED_AMOUNT"] = calculated_amounts
+            df["AUDIT_STATUS"] = audit_status
+            df["AUDIT_REMARKS"] = audit_remarks
+
+            col_img, col_data = st.columns([1, 1])
+            with col_img:
+                st.subheader("🖼️ Document Visual Overlay")
+                st.image(base_img, width="stretch")
+
+            with col_data:
+                st.subheader("📋 Audited Ledger Grid (Live Editable)")
+                display_cols = [c for c in df.columns if c != "box_2d"]
+                edited_df = st.data_editor(df[display_cols], width="stretch")
+
+                output = io.BytesIO()
+                with pd.ExcelWriter(output, engine="openpyxl") as writer:
+                    edited_df.to_excel(writer, index=False, sheet_name="Mandi_Verified_Data")
+                    ws = writer.sheets["Mandi_Verified_Data"]
+
+                    red_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+                    red_font = Font(color="9C0006", bold=True)
+                    green_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+                    green_font = Font(color="006100", bold=True)
+
+                    status_col = edited_df.columns.get_loc("AUDIT_STATUS") + 1
+                    for r_idx in range(2, len(edited_df) + 2):
+                        status_val = str(ws.cell(row=r_idx, column=status_col).value)
+                        if "🔴" in status_val:
+                            for c_idx in range(1, len(edited_df.columns) + 1):
+                                ws.cell(row=r_idx, column=c_idx).fill = red_fill
+                                ws.cell(row=r_idx, column=c_idx).font = red_font
+                        elif "✅" in status_val:
+                            ws.cell(row=r_idx, column=status_col).fill = green_fill
+                            ws.cell(row=r_idx, column=status_col).font = green_font
+
+                st.download_button(
+                    label="📥 Download Clean Audited Excel (.xlsx)",
+                    data=output.getvalue(),
+                    file_name="mandi_audited_clean.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+
+            # Visual Snippet Inspector
+            st.divider()
+            st.subheader("🔍 Visual Crop Inspector")
+            inspector_options = [f"Row {i+1} | {df.iloc[i].get('party_name', '')} | {df.iloc[i]['AUDIT_STATUS']}" for i in range(len(df))]
+            selected_row_idx = st.selectbox("Inspection ke liye row chunein:", range(len(df)), format_func=lambda x: inspector_options[x])
+
+            if selected_row_idx is not None:
+                sel_row = df.iloc[selected_row_idx]
+                r_box = sel_row.get("box_2d")
+                if r_box and isinstance(r_box, list) and len(r_box) == 4:
+                    ymin, xmin, ymax, xmax = r_box
+                    c_left = max(0, int((xmin / 1000.0) * img_w) - int(img_w * 0.015))
+                    c_top = max(0, int((ymin / 1000.0) * img_h) - int(img_h * 0.015))
+                    c_right = min(img_w, int((xmax / 1000.0) * img_w) + int(img_w * 0.015))
+                    c_bottom = min(img_h, int((ymax / 1000.0) * img_h) + int(img_h * 0.015))
+
+                    if c_right > c_left and c_bottom > c_top:
+                        cropped_img = st.session_state["base_image"].crop((c_left, c_top, c_right, c_bottom))
+                        st.image(cropped_img, caption=f"Row {selected_row_idx+1} Handwriting Zoom", width=550)
+
+            # Audio Munim Readout
+            st.divider()
+            st.subheader("🔊 Munim Audio Audit (Bol kar milaan karein)")
+            row_options = [f"Row {i+1}: {df.iloc[i].get('party_name', '')} ({df.iloc[i]['AUDIT_STATUS']})" for i in range(len(df))]
+            selected_rows = st.multiselect("Kaunsi rows sunni hain? (Khali chhodne par saari rows bolega):", range(len(df)), format_func=lambda x: row_options[x])
+
+            rows_to_speak = selected_rows if selected_rows else list(range(len(df)))
+
+            speech_script_lines = []
+            for r_idx in rows_to_speak:
+                r = df.iloc[r_idx]
+                p_name = r.get('party_name', 'Vyapari')
+                w = r.get('weight', 0)
+                rt = r.get('rate', 0)
+                calc_a = r.get('CALCULATED_AMOUNT', 0)
+                status = r.get('AUDIT_STATUS', '')
+                
+                if "CALC MISMATCH" in status:
+                    line = f"Row {r_idx+1}. {p_name}. Wazan {w}. Rate {rt}. Dhyan dein, paper par amount galat likha hai. Sahi hisaab {calc_a} banta hai."
+                elif "DOUBTFUL" in status:
+                    line = f"Row {r_idx+1}. {p_name}. Handwriting mein doubt hai, kripya check karein."
+                else:
+                    line = f"Row {r_idx+1}. {p_name}. Wazan {w}. Rate {rt}. Amount {calc_a}. Sahi match hai."
+                speech_script_lines.append(line)
+
+            full_speech_text = " ".join(speech_script_lines).replace('"', '\\"')
+
+            tts_html = f"""
+            <div style="margin-top: 8px;">
+                <button onclick="speakAudit()" style="background-color: #ff4b4b; color: white; border: none; padding: 10px 18px; font-size: 15px; border-radius: 5px; cursor: pointer; font-weight: bold;">
+                    🔊 Audio Sunna Shuru Karein
+                </button>
+                <button onclick="stopAudit()" style="background-color: #555; color: white; border: none; padding: 10px 18px; font-size: 15px; border-radius: 5px; cursor: pointer; margin-left: 10px;">
+                    ⏹️ Stop
+                </button>
+            </div>
+            <script>
+                var synth = window.speechSynthesis;
+                function speakAudit() {{
+                    synth.cancel();
+                    var text = "{full_speech_text}";
+                    var utterThis = new SpeechSynthesisUtterance(text);
+                    utterThis.lang = 'hi-IN';
+                    utterThis.rate = 0.9;
+                    synth.speak(utterThis);
+                }}
+                function stopAudit() {{
+                    synth.cancel();
+                }}
+            </script>
+            """
+            components.html(tts_html, height=65)
+
+# ----------------- MODULE 2: Autonomous Smart Retrieval (Search & Recall) -----------------
+elif app_mode == "Autonomous Smart Retrieval (Search & Recall)":
+    st.subheader("🗄️ Autonomous Vault & Universal AI Assistant")
+    st.caption("Aapka har document categorized safe hai. Bol kar ya likh kar kisi bhi purane hisaab ya gaadi ka bill maangein.")
+
+    speech_component = """
+    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+        <button id="micBtn" onclick="toggleListening()" style="background-color: #0088cc; color: white; border: none; padding: 10px 18px; font-size: 15px; border-radius: 6px; cursor: pointer; font-weight: bold;">
+            🎙️ Bolkar Maangein (Mic Hold/Click)
+        </button>
+        <span id="statusText" style="font-size: 14px; color: #888;">Mic Ready</span>
+    </div>
+    <script>
+        var recognition;
+        var recognizing = false;
+        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+            var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            recognition = new SpeechRecognition();
+            recognition.lang = 'hi-IN';
+            recognition.continuous = false;
+
+            recognition.onstart = function() {
+                recognizing = true;
+                document.getElementById('statusText').innerText = '🔴 Sun raha hoon... Boliye!';
+                document.getElementById('micBtn').style.backgroundColor = '#cc0000';
+            };
+            recognition.onend = function() {
+                recognizing = false;
+                document.getElementById('statusText').innerText = 'Mic band.';
+                document.getElementById('micBtn').style.backgroundColor = '#0088cc';
+            };
+            recognition.onresult = function(event) {
+                var transcript = event.results[0][0].transcript;
+                document.getElementById('statusText').innerText = 'Samjha: "' + transcript + '"';
+                var textInput = window.parent.document.querySelector('input[aria-label="Vault se kuch bhi poochein ya maangein:"]');
+                if (textInput) {
+                    textInput.value = transcript;
+                    textInput.dispatchEvent(new Event('input', { bubbles: true }));
+                    textInput.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            };
+        }
+        function toggleListening() {
+            if (recognizing) { recognition.stop(); }
+            else if (recognition) { recognition.start(); }
+        }
+    </script>
+    """
+    components.html(speech_component, height=55)
+
+    search_query = st.chat_input("Vault se kuch bhi poochein ya maangein:")
+
+    if search_query:
+        with st.chat_message("user"):
+            st.markdown(search_query)
+
+        vault_summary = []
+        for doc in vault.get("documents", []):
+            vault_summary.append({
+                "doc_id": doc.get("doc_id"),
+                "filename": doc.get("filename"),
+                "category": doc.get("category"),
+                "date": doc.get("date"),
+                "truck_no": doc.get("truck_no"),
+                "parties": doc.get("parties"),
+                "summary": doc.get("summary"),
+                "records": doc.get("records")
+            })
+
+        retrieval_prompt = f"""
+        You are 'Mandi Vault Memory Intelligence'.
+        The user wants to find, recall, or analyze records from stored documents.
+
+        [ENTIRE ARCHIVE METADATA]:
+        {json.dumps(vault_summary, ensure_ascii=False)}
+
+        [USER INQUIRY]: "{search_query}"
+
+        INSTRUCTIONS:
+        1. Answer clearly in Hindi/Hinglish.
+        2. Mention exact details: Date, Truck No, Party Name, Total Amount, and Category.
+        3. If you find matching documents, specify their exact 'doc_id' and 'filename' so the app can render them.
+        """
+
+        with st.chat_message("assistant"):
+            with st.spinner("Vault scan aur document matching chal raha hai..."):
+                try:
+                    res = client.models.generate_content(
+                        model="gemini-2.5-flash",
+                        contents=[retrieval_prompt]
+                    )
+                    ans_text = res.text.strip()
+                    st.markdown(ans_text)
+
+                    matched_docs = [d for d in vault.get("documents", []) if d.get("doc_id") in ans_text or d.get("filename") in ans_text]
+                    if matched_docs:
+                        st.divider()
+                        st.subheader("📂 Matched Physical Document Preview")
+                        for m_doc in matched_docs:
+                            st.write(f"**Document:** `{m_doc.get('filename')}` | **Folder:** `{m_doc.get('category')}`")
+                            p_path = m_doc.get("stored_path")
+                            if p_path and os.path.exists(p_path):
+                                if p_path.lower().endswith(".pdf"):
+                                    pdf_rend = pdfium.PdfDocument(p_path)[0].render(scale=2).to_pil()
+                                    st.image(pdf_rend, caption=m_doc.get('filename'), width=500)
+                                else:
+                                    st.image(Image.open(p_path), caption=m_doc.get('filename'), width=500)
+
+                    clean_voice = ans_text.replace('"', '\\"').replace('\n', ' ')
+                    components.html(f"""
+                    <script>
+                        var synth = window.speechSynthesis;
+                        synth.cancel();
+                        var utter = new SpeechSynthesisUtterance("{clean_voice}");
+                        utter.lang = 'hi-IN';
+                        synth.speak(utter);
+                    </script>
+                    """, height=0)
+
+                except Exception as ex:
+                    st.error(f"Search failed: {ex}")
+
+# ----------------- MODULE 3: Instant Math Explanation -----------------
+elif app_mode == "Explain Math (Doubt Solver)":
+    st.subheader("🔍 Instant Calculation Breakdown & Explanation")
+    doubt_doc = st.file_uploader("Document upload karein", type=["jpg", "jpeg", "png", "pdf"], key="d_file")
+    user_math_q = st.text_input("Kis sankhya ya hisaab par doubt hai?", placeholder="e.g. Total 54,200 kaise aaya? Rate aur deduction samjhao.")
+
+    if doubt_doc and user_math_q and st.button("🧠 Explain Step-by-Step"):
+        with st.spinner("Breakdown chal raha hai..."):
+            img_part = build_part_from_pil(load_source_image(doubt_doc))
+            math_prompt = f"""
+            You are a master Indian Mandi auditor. Break down the calculation:
+            Query: "{user_math_q}"
+            1. Raw weights & rates.
+            2. Exact math formula applied.
+            3. Did the munim make an arithmetic mistake? State the difference in Rupees.
             """
             try:
                 res = client.models.generate_content(
-                    model="gemini-3.5-flash-lite",
-                    contents=[prompt, "Doc 1:", build_part(d1), "Doc 2:", build_part(d2)]
+                    model="gemini-2.5-flash",
+                    contents=[math_prompt, img_part]
+                )
+                st.markdown(res.text)
+            except Exception as e:
+                st.error(f"Error: {e}")
+
+# ----------------- MODULE 4: 2-Document Matcher -----------------
+else:
+    st.subheader("🔍 Forensic 2-Document Matcher (0.0001% Variance)")
+    c1, c2 = st.columns(2)
+    with c1: d1 = st.file_uploader("Document 1", type=["jpg", "jpeg", "png", "pdf"], key="d1_m")
+    with c2: d2 = st.file_uploader("Document 2", type=["jpg", "jpeg", "png", "pdf"], key="d2_m")
+
+    if d1 and d2 and st.button("Run Forensic Cross-Check"):
+        with st.spinner("Analyzing micro-deviations..."):
+            prompt = """
+            Compare Document 1 and Document 2 down to 0.0001% variance.
+            Highlight ANY mismatch using:
+            `<span style='background-color: #ff4b4b; color: white; padding: 2px 5px; border-radius: 3px;'>🔴 VALUE (MISMATCH)</span>`.
+            Provide:
+            1. Verdict: 100% MATCH or CRITICAL DISCREPANCIES DETECTED
+            2. Detailed Markdown Comparison Table
+            """
+            try:
+                res = client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=[prompt, build_part_from_pil(load_source_image(d1)), build_part_from_pil(load_source_image(d2))]
                 )
                 st.markdown(res.text, unsafe_allow_html=True)
             except Exception as e:
