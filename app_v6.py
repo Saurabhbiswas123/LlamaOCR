@@ -12,7 +12,7 @@ from datetime import datetime
 import pypdfium2 as pdfium
 from openpyxl.styles import PatternFill, Font
 
-st.set_page_config(page_title="Mandi AI - Enterprise Master Suite", layout="wide")
+st.set_page_config(page_title="Mandi AI Enterprise Suite", layout="wide")
 st.title("🌾 Mandi AI: Enterprise OCR, Excel Audit, Siri Voice & Forensic Suite")
 
 api_key = st.secrets.get("GEMINI_API_KEY")
@@ -459,4 +459,4 @@ elif app_mode == "💬 SMS / Text Chat":
 
 # ----------------- MODULE 4: DOUBT SOLVER -----------------
 elif app_mode == "🧮 Hisaab Samjhein (Doubt Solver)":
-    st.subheader("🔍 Ins
+    st.subheader("🔍 Instant Calc
