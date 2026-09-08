@@ -12,8 +12,8 @@ from datetime import datetime
 import pypdfium2 as pdfium
 from openpyxl.styles import PatternFill, Font
 
-st.set_page_config(page_title="Mandi AI Master Vault & Hands-Free Assistant", layout="wide")
-st.title("🌾 Mandi AI: Enterprise Autonomous Vault, Hands-Free Munim & Forensic OCR")
+st.set_page_config(page_title="Mandi AI - Genie Voice Munim", layout="wide")
+st.title("🌾 Mandi AI: Genie (भारतीय मुनीम) & Autonomous Document Vault")
 
 api_key = st.secrets.get("GEMINI_API_KEY")
 if not api_key:
@@ -106,27 +106,85 @@ with st.sidebar:
 
 # ----------------- MODULE 1: Hands-Free Genie Wake-Word Assistant -----------------
 if app_mode == "Hands-Free Genie Voice Assistant":
-    st.subheader("🧞 Genie Voice Assistant (Always Listening)")
-    st.info("💡 **Wake Word Active:** Screen ko touch kiye bina sirf boliye **'Hey Genie'** ya **'Genie'**; Genie turant active hokar aapse baat karegi.")
+    st.subheader("👩‍💼 जिनी (Genie): आपकी अपनी भारतीय डिजिटल मुनीम")
+    st.caption("बोलिए **'हे जिनी' (Hey Genie)** या नीचे माइक दबाकर सीधे बात कीजिए। जिनी शुद्ध भारतीय नारी की आवाज़ में तुरंत उत्तर देगी।")
 
+    # Fixed Web Speech Recognition + Hindi Female TTS Engine
     handsfree_html = """
-    <div style="background: #1e293b; padding: 14px; border-radius: 10px; border: 1px solid #334155; margin-bottom: 15px; display: flex; align-items: center; justify-content: space-between;">
-        <div>
-            <span id="genieIndicator" style="display: inline-block; width: 14px; height: 14px; border-radius: 50%; background-color: #22c55e; margin-right: 8px;"></span>
-            <strong id="genieStatus" style="color: #f8fafc; font-size: 15px;">Genie sun rahi hai (Wake Word: 'Hey Genie')...</strong>
+    <div style="background: linear-gradient(135deg, #1e293b, #0f172a); padding: 16px; border-radius: 12px; border: 1px solid #38bdf8; margin-bottom: 15px;">
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span id="genieIndicator" style="display: inline-block; width: 14px; height: 14px; border-radius: 50%; background-color: #22c55e; box-shadow: 0 0 8px #22c55e;"></span>
+                <strong id="genieStatus" style="color: #f8fafc; font-size: 15px;">जिनी सुन रही हैं... (बोलिए: 'हे जिनी')</strong>
+            </div>
+            <button onclick="startListeningManually()" style="background: #e11d48; color: white; border: none; padding: 8px 16px; border-radius: 8px; font-weight: bold; cursor: pointer;">
+                🎙️ माइक दबाकर बोलें
+            </button>
         </div>
-        <button id="toggleBtn" onclick="toggleContinuousWake()" style="background: #0284c7; color: white; border: none; padding: 6px 14px; border-radius: 6px; font-weight: bold; cursor: pointer;">
-            Restart Mic
-        </button>
+        <div id="heardText" style="color: #94a3b8; font-size: 13px; margin-top: 8px; font-style: italic;">
+            आप जो बोलेंगे वो यहाँ दिखेगा और सीधे जिनी तक पहुंचेगा...
+        </div>
     </div>
 
     <script>
     var continuousRec;
     var isAwake = false;
 
-    function initGenieListener() {
+    // Speak function with Indian Female Tone Priority
+    function speakHindiFemale(text) {
+        if (!('speechSynthesis' in window)) return;
+        window.speechSynthesis.cancel();
+        var utter = new SpeechSynthesisUtterance(text);
+        utter.lang = 'hi-IN';
+        utter.rate = 0.93;
+        utter.pitch = 1.15; // Pleasant feminine pitch
+
+        var voices = window.speechSynthesis.getVoices();
+        var selectedVoice = null;
+
+        // Try to pick authentic Indian female voice
+        for (var i = 0; i < voices.length; i++) {
+            var v = voices[i];
+            if (v.lang.includes('hi') || v.lang.includes('IN')) {
+                var name = v.name.toLowerCase();
+                if (name.includes('female') || name.includes('lekha') || name.includes('swara') || name.includes('kalpana') || name.includes('google')) {
+                    selectedVoice = v;
+                    break;
+                }
+                if (!selectedVoice) selectedVoice = v;
+            }
+        }
+        if (selectedVoice) utter.voice = selectedVoice;
+        window.speechSynthesis.speak(utter);
+    }
+
+    function triggerStreamlitSubmission(text) {
+        var parentDoc = window.parent.document;
+        // Accurate Streamlit chat input selector
+        var ta = parentDoc.querySelector('textarea[data-testid="stChatInputTextArea"]');
+        var btn = parentDoc.querySelector('button[data-testid="stChatInputSubmitButton"]');
+
+        if (ta) {
+            var nativeSetter = Object.getOwnPropertyDescriptor(window.parent.HTMLTextAreaElement.prototype, "value").set;
+            nativeSetter.call(ta, text);
+            ta.dispatchEvent(new Event('input', { bubbles: true }));
+            ta.dispatchEvent(new Event('change', { bubbles: true }));
+
+            setTimeout(function() {
+                if (btn) {
+                    btn.click();
+                } else {
+                    ta.dispatchEvent(new KeyboardEvent('keydown', {'key': 'Enter', 'keyCode': 13, 'which': 13, 'bubbles': true}));
+                }
+            }, 300);
+        } else {
+            console.log("Chat textarea not found");
+        }
+    }
+
+    function initGenie() {
         if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-            document.getElementById('genieStatus').innerText = "Browser Web Speech support nahi karta.";
+            document.getElementById('genieStatus').innerText = "माइक्रोफ़ोन ब्राउज़र में सपोर्टेड नहीं है।";
             return;
         }
 
@@ -138,45 +196,39 @@ if app_mode == "Hands-Free Genie Voice Assistant":
 
         continuousRec.onstart = function() {
             document.getElementById('genieIndicator').style.backgroundColor = "#22c55e";
-            document.getElementById('genieStatus').innerText = "Genie sun rahi hai (Boliye 'Hey Genie')...";
+            document.getElementById('genieStatus').innerText = "जिनी सुन रही हैं... (बोलिए: 'हे जिनी')";
         };
 
-        continuousRec.onerror = function() {
-            try { continuousRec.start(); } catch(e) {}
+        continuousRec.onerror = function(e) {
+            try { continuousRec.start(); } catch(err) {}
         };
 
         continuousRec.onend = function() {
-            try { continuousRec.start(); } catch(e) {}
+            try { continuousRec.start(); } catch(err) {}
         };
 
         continuousRec.onresult = function(event) {
             for (var i = event.resultIndex; i < event.results.length; ++i) {
                 var transcript = event.results[i][0].transcript.toLowerCase().trim();
-                
-                if (!isAwake && (transcript.includes("genie") || transcript.includes("gini") || transcript.includes("hey genie") || transcript.includes("he genie") || transcript.includes("ji ni"))) {
+                document.getElementById('heardText').innerText = "सुना: " + transcript;
+
+                // Wake word trigger
+                if (!isAwake && (transcript.includes("genie") || transcript.includes("जिनी") || transcript.includes("gini") || transcript.includes("hey genie") || transcript.includes("he genie"))) {
                     isAwake = true;
-                    document.getElementById('genieIndicator').style.backgroundColor = "#ef4444";
-                    document.getElementById('genieStatus').innerText = "🔴 Genie Active! Sawal boliye...";
-                    
-                    var synth = window.speechSynthesis;
-                    synth.cancel();
-                    var greeting = new SpeechSynthesisUtterance("Haan Saurabh ji, boliye! Kya seva karoon?");
-                    greeting.lang = 'hi-IN';
-                    greeting.rate = 1.0;
-                    synth.speak(greeting);
+                    document.getElementById('genieIndicator').style.backgroundColor = "#e11d48";
+                    document.getElementById('genieStatus').innerText = "🔴 जिनी सक्रिय हैं! अपना प्रश्न बोलिए...";
+                    speakHindiFemale("नमस्ते भैया, बताइए क्या हिसाब देखना है? मैं सुन रही हूँ।");
                     return;
                 }
 
-                if (isAwake && event.results[i].isFinal) {
-                    isAwake = false;
-                    document.getElementById('genieIndicator').style.backgroundColor = "#22c55e";
-                    document.getElementById('genieStatus').innerText = "Process ho raha hai: '" + transcript + "'";
-
-                    var textInput = window.parent.document.querySelector('input[aria-label="Genie se kuch bhi poochein:"]');
-                    if (textInput) {
-                        textInput.value = transcript;
-                        textInput.dispatchEvent(new Event('input', { bubbles: true }));
-                        textInput.dispatchEvent(new Event('change', { bubbles: true }));
+                // If wake or final query recognized
+                if (event.results[i].isFinal) {
+                    var cleaned = transcript.replace(/hey genie|he genie|genie|जिनी/gi, "").trim();
+                    if (cleaned.length > 2) {
+                        isAwake = false;
+                        document.getElementById('genieIndicator').style.backgroundColor = "#22c55e";
+                        document.getElementById('genieStatus').innerText = "प्रश्न भेजा जा रहा है: '" + cleaned + "'";
+                        triggerStreamlitSubmission(cleaned);
                     }
                 }
             }
@@ -185,29 +237,32 @@ if app_mode == "Hands-Free Genie Voice Assistant":
         try { continuousRec.start(); } catch(e) {}
     }
 
-    function toggleContinuousWake() {
+    function startListeningManually() {
         if (continuousRec) {
             try { continuousRec.stop(); } catch(e) {}
         }
-        initGenieListener();
+        isAwake = true;
+        document.getElementById('genieIndicator').style.backgroundColor = "#e11d48";
+        document.getElementById('genieStatus').innerText = "🔴 बोलिए, जिनी ध्यान से सुन रही हैं...";
+        initGenie();
     }
 
-    window.onload = initGenieListener;
-    initGenieListener();
+    window.onload = initGenie;
+    initGenie();
     </script>
     """
-    components.html(handsfree_html, height=75)
+    components.html(handsfree_html, height=105)
 
     if "chat_history" not in st.session_state:
         st.session_state["chat_history"] = [
-            {"role": "assistant", "content": "Namaste Saurabh ji! Main Genie hoon, aapki apni AI Munim. Jab bhi zaroorat ho, bas boliye 'Hey Genie' aur apna sawal poochein. Main turant jawab dungi."}
+            {"role": "assistant", "content": "नमस्ते भैया! मैं जिनी हूँ, आपकी अपनी मुनीम बहन। मंडी का कोई भी हिसाब हो, पर्ची मिलानी हो या गाड़ी का चालान देखना हो—आप बस बोलकर बताइए, मैं सब समझा दूँगी।"}
         ]
 
     for msg in st.session_state["chat_history"]:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-    user_query = st.chat_input("Genie se kuch bhi poochein:")
+    user_query = st.chat_input("जिनी से कुछ भी पूछें...")
 
     if user_query:
         st.session_state["chat_history"].append({"role": "user", "content": user_query})
@@ -230,37 +285,38 @@ if app_mode == "Hands-Free Genie Voice Assistant":
         persistent_rules_text = "\n".join([r.get("rule", "") for r in vault.get("business_knowledge", [])])
 
         genie_prompt = f"""
-        You are 'Genie', an authentic, warm, sharp, respectful, and friendly accounting AI partner for Saurabh Biswas's Mandi and grain trading business.
-        The user addresses you as 'Genie'. You speak like a dedicated, real human partner who knows every single penny of the accounts.
+        आप 'जिनी' (Genie) हैं—एक समझदार, आदरणीय, शुद्ध और मधुर हिंदी बोलने वाली भारतीय मुनीम।
+        आप उपयोगकर्ता (भैया / मालिक) से एक निष्ठावान, होशियार भारतीय बहन/मुनीम की तरह बात करती हैं।
 
-        [SAVED BUSINESS RULES & SOP]:
+        [भाषा और लहजे के अनिवार्य नियम]:
+        1. हमेशा शुद्ध, स्पष्ट, सम्मानजनक हिंदी बोलें (जैसे: "नमस्ते भैया", "जी, मैं अभी हिसाब देखकर बताती हूँ", "आप बिल्कुल चिंता मत कीजिए")।
+        2. आपका लिंग STRICTLY FEMININE (स्त्रीलिंग) रहेगा:
+           - "मैं देख रही हूँ", "मैं बताती हूँ", "मैंने हिसाब मिला लिया है" (कभी भी 'रहा हूँ' या 'करता हूँ' मत बोलना)।
+        3. उत्तर हमेशा सीधा, स्पष्ट और सटीक रखें।
+        4. जब भी मंडी के बही-खाते, गाड़ी या किसान के बारे में पूछा जाए, तो नीचे दिए गए सुरक्षित डेटा से बिल्कुल सही आंकड़े निकाल कर दें।
+
+        [दुकान / व्यापार के नियम]:
         {persistent_rules_text}
 
-        [ALL SAVED BUSINESS RECORDS & VAULT DOCUMENTS]:
+        [पुराना सुरक्षित रिकॉर्ड और दस्तावेज़]:
         {json.dumps(vault_summary, ensure_ascii=False)}
 
-        [USER QUERY]: "{user_query}"
-
-        RULES:
-        1. Always speak in natural, friendly, respectful Hindi/Hinglish.
-        2. Answer directly and concisely like an expert Munim.
-        3. If asked about previous bills, truck movements, farmers, weights, or amounts, fetch exact factual figures from the vault.
-        4. If a document matches, mention its filename so it can be previewed.
-        5. Keep responses crisp and ready for speech synthesis.
+        [यूज़र का सवाल]: "{user_query}"
         """
 
         with st.chat_message("assistant"):
-            with st.spinner("Genie hisaab nikaal rahi hai..."):
+            with st.spinner("जिनी हिसाब देख रही हैं..."):
                 try:
                     res = generate_with_fallback([genie_prompt])
                     ans_text = res.text.strip()
                     st.markdown(ans_text)
                     st.session_state["chat_history"].append({"role": "assistant", "content": ans_text})
 
+                    # Show matched documents
                     matched_docs = [d for d in vault.get("documents", []) if d.get("doc_id") in ans_text or d.get("filename") in ans_text]
                     if matched_docs:
                         st.divider()
-                        st.subheader("📂 Document Preview")
+                        st.subheader("📂 दस्तावेज़ की प्रति (Document Preview)")
                         for m_doc in matched_docs:
                             p_path = m_doc.get("stored_path")
                             if p_path and os.path.exists(p_path):
@@ -270,6 +326,7 @@ if app_mode == "Hands-Free Genie Voice Assistant":
                                 else:
                                     st.image(Image.open(p_path), caption=m_doc.get('filename'), width=500)
 
+                    # Indian Female Voice Output
                     clean_voice = ans_text.replace('"', '\\"').replace('\n', ' ')
                     components.html(f"""
                     <script>
@@ -277,7 +334,20 @@ if app_mode == "Hands-Free Genie Voice Assistant":
                         synth.cancel();
                         var utter = new SpeechSynthesisUtterance("{clean_voice}");
                         utter.lang = 'hi-IN';
-                        utter.rate = 1.0;
+                        utter.rate = 0.93;
+                        utter.pitch = 1.15;
+
+                        var voices = synth.getVoices();
+                        for (var i = 0; i < voices.length; i++) {{
+                            var v = voices[i];
+                            if (v.lang.includes('hi') || v.lang.includes('IN')) {{
+                                var n = v.name.toLowerCase();
+                                if (n.includes('female') || n.includes('lekha') || n.includes('swara') || n.includes('google')) {{
+                                    utter.voice = v;
+                                    break;
+                                }}
+                            }}
+                        }}
                         synth.speak(utter);
                     </script>
                     """, height=0)
@@ -379,221 +449,4 @@ elif app_mode == "Upload, OCR & Auto-Filing Vault":
 
         # Post-Processing
         if "active_records" in st.session_state and "base_image" in st.session_state:
-            records = st.session_state["active_records"]
-            base_img = st.session_state["base_image"].copy()
-            img_w, img_h = base_img.size
-
-            df = pd.DataFrame(records)
-            draw = ImageDraw.Draw(base_img)
-
-            calculated_amounts = []
-            audit_status = []
-            audit_remarks = []
-
-            for idx, row in df.iterrows():
-                try:
-                    w = float(re.sub(r"[^\d.]", "", str(row.get("weight", 0))) or 0)
-                    r = float(re.sub(r"[^\d.]", "", str(row.get("rate", 0))) or 0)
-                    written_amt = float(re.sub(r"[^\d.]", "", str(row.get("written_amount", 0))) or 0)
-                    correct_amt = round(w * r, 2)
-                    calculated_amounts.append(correct_amt)
-
-                    is_doubt = bool(row.get("doubt_flag", False))
-                    reason = str(row.get("doubt_reason", "")).strip()
-
-                    is_math_mismatch = (written_amt > 0 and correct_amt > 0 and abs(correct_amt - written_amt) > 1.0)
-                    
-                    if is_math_mismatch:
-                        diff = round(written_amt - correct_amt, 2)
-                        st_text = "🔴 CALC MISMATCH"
-                        rm_text = f"Paper: ₹{written_amt} | Sahi: ₹{correct_amt} (Farq: ₹{diff})"
-                        box_color = "#FF0000"
-                    elif is_doubt:
-                        st_text = "🔴 DOUBTFUL INK"
-                        rm_text = reason if reason else "Ambiguous text"
-                        box_color = "#FFA500"
-                    else:
-                        st_text = "✅ 100% OK"
-                        rm_text = "Verified"
-                        box_color = "#00AA00"
-
-                    audit_status.append(st_text)
-                    audit_remarks.append(rm_text)
-
-                    box = row.get("box_2d")
-                    if box and isinstance(box, list) and len(box) == 4:
-                        ymin, xmin, ymax, xmax = box
-                        left = int((xmin / 1000.0) * img_w)
-                        top = int((ymin / 1000.0) * img_h)
-                        right = int((xmax / 1000.0) * img_w)
-                        bottom = int((ymax / 1000.0) * img_h)
-
-                        draw.rectangle([left, top, right, bottom], outline=box_color, width=3)
-                        tag_text = f"#{idx+1}: {'ERR' if (is_math_mismatch or is_doubt) else 'OK'}"
-                        draw.rectangle([left, max(0, top-18), left+60, top], fill=box_color)
-                        draw.text((left+3, max(0, top-16)), tag_text, fill="white")
-
-                except Exception:
-                    calculated_amounts.append(0)
-                    audit_status.append("🔴 ERROR")
-                    audit_remarks.append("Review manually")
-
-            df["CALCULATED_AMOUNT"] = calculated_amounts
-            df["AUDIT_STATUS"] = audit_status
-            df["AUDIT_REMARKS"] = audit_remarks
-
-            col_img, col_data = st.columns([1, 1])
-            with col_img:
-                st.subheader("🖼️ Document Visual Overlay")
-                st.image(base_img, width="stretch")
-
-            with col_data:
-                st.subheader("📋 Audited Ledger Grid (Live Editable)")
-                display_cols = [c for c in df.columns if c != "box_2d"]
-                edited_df = st.data_editor(df[display_cols], width="stretch")
-
-                output = io.BytesIO()
-                with pd.ExcelWriter(output, engine="openpyxl") as writer:
-                    edited_df.to_excel(writer, index=False, sheet_name="Mandi_Verified_Data")
-                    ws = writer.sheets["Mandi_Verified_Data"]
-
-                    red_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
-                    red_font = Font(color="9C0006", bold=True)
-                    green_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
-                    green_font = Font(color="006100", bold=True)
-
-                    status_col = edited_df.columns.get_loc("AUDIT_STATUS") + 1
-                    for r_idx in range(2, len(edited_df) + 2):
-                        status_val = str(ws.cell(row=r_idx, column=status_col).value)
-                        if "🔴" in status_val:
-                            for c_idx in range(1, len(edited_df.columns) + 1):
-                                ws.cell(row=r_idx, column=c_idx).fill = red_fill
-                                ws.cell(row=r_idx, column=c_idx).font = red_font
-                        elif "✅" in status_val:
-                            ws.cell(row=r_idx, column=status_col).fill = green_fill
-                            ws.cell(row=r_idx, column=status_col).font = green_font
-
-                st.download_button(
-                    label="📥 Download Clean Audited Excel (.xlsx)",
-                    data=output.getvalue(),
-                    file_name="mandi_audited_clean.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
-
-            # Visual Snippet Inspector
-            st.divider()
-            st.subheader("🔍 Visual Crop Inspector")
-            inspector_options = [f"Row {i+1} | {df.iloc[i].get('party_name', '')} | {df.iloc[i]['AUDIT_STATUS']}" for i in range(len(df))]
-            selected_row_idx = st.selectbox("Inspection ke liye row chunein:", range(len(df)), format_func=lambda x: inspector_options[x])
-
-            if selected_row_idx is not None:
-                sel_row = df.iloc[selected_row_idx]
-                r_box = sel_row.get("box_2d")
-                if r_box and isinstance(r_box, list) and len(r_box) == 4:
-                    ymin, xmin, ymax, xmax = r_box
-                    c_left = max(0, int((xmin / 1000.0) * img_w) - int(img_w * 0.015))
-                    c_top = max(0, int((ymin / 1000.0) * img_h) - int(img_h * 0.015))
-                    c_right = min(img_w, int((xmax / 1000.0) * img_w) + int(img_w * 0.015))
-                    c_bottom = min(img_h, int((ymax / 1000.0) * img_h) + int(img_h * 0.015))
-
-                    if c_right > c_left and c_bottom > c_top:
-                        cropped_img = st.session_state["base_image"].crop((c_left, c_top, c_right, c_bottom))
-                        st.image(cropped_img, caption=f"Row {selected_row_idx+1} Handwriting Zoom", width=550)
-
-            # Audio Munim Readout
-            st.divider()
-            st.subheader("🔊 Munim Audio Audit (Bol kar milaan karein)")
-            row_options = [f"Row {i+1}: {df.iloc[i].get('party_name', '')} ({df.iloc[i]['AUDIT_STATUS']})" for i in range(len(df))]
-            selected_rows = st.multiselect("Kaunsi rows sunni hain? (Khali chhodne par saari rows bolega):", range(len(df)), format_func=lambda x: row_options[x])
-
-            rows_to_speak = selected_rows if selected_rows else list(range(len(df)))
-
-            speech_script_lines = []
-            for r_idx in rows_to_speak:
-                r = df.iloc[r_idx]
-                p_name = r.get('party_name', 'Vyapari')
-                w = r.get('weight', 0)
-                rt = r.get('rate', 0)
-                calc_a = r.get('CALCULATED_AMOUNT', 0)
-                status = r.get('AUDIT_STATUS', '')
-                
-                if "CALC MISMATCH" in status:
-                    line = f"Row {r_idx+1}. {p_name}. Wazan {w}. Rate {rt}. Dhyan dein, paper par amount galat likha hai. Sahi hisaab {calc_a} banta hai."
-                elif "DOUBTFUL" in status:
-                    line = f"Row {r_idx+1}. {p_name}. Handwriting mein doubt hai, kripya check karein."
-                else:
-                    line = f"Row {r_idx+1}. {p_name}. Wazan {w}. Rate {rt}. Amount {calc_a}. Sahi match hai."
-                speech_script_lines.append(line)
-
-            full_speech_text = " ".join(speech_script_lines).replace('"', '\\"')
-
-            tts_html = f"""
-            <div style="margin-top: 8px;">
-                <button onclick="speakAudit()" style="background-color: #ff4b4b; color: white; border: none; padding: 10px 18px; font-size: 15px; border-radius: 5px; cursor: pointer; font-weight: bold;">
-                    🔊 Audio Sunna Shuru Karein
-                </button>
-                <button onclick="stopAudit()" style="background-color: #555; color: white; border: none; padding: 10px 18px; font-size: 15px; border-radius: 5px; cursor: pointer; margin-left: 10px;">
-                    ⏹️ Stop
-                </button>
-            </div>
-            <script>
-                var synth = window.speechSynthesis;
-                function speakAudit() {{
-                    synth.cancel();
-                    var text = "{full_speech_text}";
-                    var utterThis = new SpeechSynthesisUtterance(text);
-                    utterThis.lang = 'hi-IN';
-                    utterThis.rate = 0.9;
-                    synth.speak(utterThis);
-                }}
-                function stopAudit() {{
-                    synth.cancel();
-                }}
-            </script>
-            """
-            components.html(tts_html, height=65)
-
-# ----------------- MODULE 3: Instant Math Explanation -----------------
-elif app_mode == "Explain Math (Doubt Solver)":
-    st.subheader("🔍 Instant Calculation Breakdown & Explanation")
-    doubt_doc = st.file_uploader("Document upload karein", type=["jpg", "jpeg", "png", "pdf"], key="d_file")
-    user_math_q = st.text_input("Kis sankhya ya hisaab par doubt hai?", placeholder="e.g. Total 54,200 kaise aaya? Rate aur deduction samjhao.")
-
-    if doubt_doc and user_math_q and st.button("🧠 Explain Step-by-Step"):
-        with st.spinner("Breakdown chal raha hai..."):
-            img_part = build_part_from_pil(load_source_image(doubt_doc))
-            math_prompt = f"""
-            You are a master Indian Mandi auditor. Break down the calculation:
-            Query: "{user_math_q}"
-            1. Raw weights & rates.
-            2. Exact math formula applied.
-            3. Did the munim make an arithmetic mistake? State the difference in Rupees.
-            """
-            try:
-                res = generate_with_fallback([math_prompt, img_part])
-                st.markdown(res.text)
-            except Exception as e:
-                st.error(f"Error: {e}")
-
-# ----------------- MODULE 4: 2-Document Matcher -----------------
-else:
-    st.subheader("🔍 Forensic 2-Document Matcher (0.0001% Variance)")
-    c1, c2 = st.columns(2)
-    with c1: d1 = st.file_uploader("Document 1", type=["jpg", "jpeg", "png", "pdf"], key="d1_m")
-    with c2: d2 = st.file_uploader("Document 2", type=["jpg", "jpeg", "png", "pdf"], key="d2_m")
-
-    if d1 and d2 and st.button("Run Forensic Cross-Check"):
-        with st.spinner("Analyzing micro-deviations..."):
-            prompt = """
-            Compare Document 1 and Document 2 down to 0.0001% variance.
-            Highlight ANY mismatch using:
-            `<span style='background-color: #ff4b4b; color: white; padding: 2px 5px; border-radius: 3px;'>🔴 VALUE (MISMATCH)</span>`.
-            Provide:
-            1. Verdict: 100% MATCH or CRITICAL DISCREPANCIES DETECTED
-            2. Detailed Markdown Comparison Table
-            """
-            try:
-                res = generate_with_fallback([prompt, build_part_from_pil(load_source_image(d1)), build_part_from_pil(load_source_image(d2))])
-                st.markdown(res.text, unsafe_allow_html=True)
-            except Exception as e:
-                st.error(f"Audit match error: {e}")
+            records = st.session_state["active_recor
