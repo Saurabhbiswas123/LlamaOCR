@@ -8,13 +8,11 @@ import io
 import os
 import json
 import re
-import base64
 from datetime import datetime
 import pypdfium2 as pdfium
 from openpyxl.styles import PatternFill, Font
-from gtts import gTTS
 
-st.set_page_config(page_title="Genie: Real-Time Pure Voice", layout="wide")
+st.set_page_config(page_title="Genie: Siri Voice & SMS Chat", layout="wide")
 
 api_key = st.secrets.get("GEMINI_API_KEY")
 if not api_key:
@@ -34,7 +32,7 @@ def run_fast_ai(contents, config=None):
             continue
     raise Exception("AI Error")
 
-# Persistent File Storage
+# Persistent File Storage & Master Vault
 STORAGE_DIR = "vault_files"
 INDEX_FILE = "vault_index.json"
 for fld in ["Truck_Logistics", "Mandi_Parchi", "Invoices_Bills"]:
@@ -67,156 +65,231 @@ def build_part(pil_img):
     img.save(buf, format="JPEG", quality=90)
     return types.Part.from_bytes(data=buf.getvalue(), mime_type="image/jpeg")
 
-# Sidebar Navigation
+# Sidebar
 with st.sidebar:
-    st.header("🧠 Memory & Vault")
+    st.header("🧠 Permanent Memory")
     new_r = st.text_area("SOP / Rules:")
     if st.button("Save Rule"):
         if new_r.strip():
             vault["rules"].append(new_r.strip())
             save_vault(vault)
-            st.success("Saved!")
+            st.success("Rule Saved!")
+    if vault.get("rules"):
+        for i, r in enumerate(vault["rules"][-3:], 1):
+            st.caption(f"{i}. {r}")
     st.divider()
     app_mode = st.radio("Navigation:", [
-        "📞 Genie Pure Voice Call (No Text)",
+        "💖 Genie AI Companion (Voice & SMS)",
         "📤 Parchi & Bill Auto-Filing Vault",
         "🧮 Hisaab Samjhein (Doubt Solver)",
         "🔍 2-Document Forensic Matcher"
     ])
 
-# ----------------- MODULE 1: PURE REAL-TIME VOICE CALL (NO TEXT CHAT) -----------------
-if app_mode == "📞 Genie Pure Voice Call (No Text)":
-    st.markdown("""
-        <style>
-            .voice-card {
-                background: radial-gradient(circle, #381024 0%, #0c020d 100%);
-                padding: 40px 20px;
-                border-radius: 25px;
-                border: 2px solid #f43f5e;
-                text-align: center;
-                box-shadow: 0 0 35px rgba(244,63,94,0.35);
-                margin: 20px auto;
-                max-width: 500px;
-            }
-            .avatar-pulse {
-                width: 120px;
-                height: 120px;
-                background: #f43f5e;
-                border-radius: 50%;
-                margin: 0 auto 20px auto;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-size: 55px;
-                box-shadow: 0 0 25px #f43f5e;
-                animation: pulse 2s infinite ease-in-out;
-            }
-            @keyframes pulse {
-                0% { transform: scale(0.96); box-shadow: 0 0 15px rgba(244,63,94,0.6); }
-                50% { transform: scale(1.05); box-shadow: 0 0 35px rgba(244,63,94,0.9); }
-                100% { transform: scale(0.96); box-shadow: 0 0 15px rgba(244,63,94,0.6); }
-            }
-        </style>
-        <div class="voice-card">
-            <div class="avatar-pulse">💖</div>
-            <h2 style="color: #fff; margin-bottom: 5px;">Genie Live Voice Call</h2>
-            <p style="color: #fbcfe8; font-size: 15px; margin: 0;">Hands-Free Voice Active • No Screen Touch Required</p>
-        </div>
-    """, unsafe_allow_html=True)
+# ----------------- MODULE 1: DUAL-MODE COMPANION (VOICE + SMS) -----------------
+if app_mode == "💖 Genie AI Companion (Voice & SMS)":
+    # Interaction Mode Switcher
+    interact_mode = st.radio(
+        "Baat karne ka madhyam chunein:", 
+        ["⚡ Siri-Mode Live Call (Hands-Free Bolkar)", "💬 SMS / Silent Chat (Likhkar)"], 
+        horizontal=True
+    )
 
-    # Fast Continuous Voice Listener (Hidden Communication Bridge)
-    call_bridge = """
-    <div style="text-align: center; margin-bottom: 20px;">
-        <span id="callStatus" style="color: #22c55e; font-size: 16px; font-weight: bold;">🟢 Call Connected... Genie sun rahi hain</span>
-    </div>
-    <script>
-    var rec;
-    function initCall() {
-        if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) return;
-        var SRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-        rec = new SRec();
-        rec.continuous = true;
-        rec.interimResults = false;
-        rec.lang = 'hi-IN';
+    vault_summary = json.dumps(vault.get("documents", []), ensure_ascii=False)
+    rules_text = "\n".join(vault.get("rules", []))
 
-        rec.onstart = function() {
-            document.getElementById('callStatus').innerText = "🟢 Call Connected... Genie sun rahi hain";
-            document.getElementById('callStatus').style.color = "#22c55e";
-        };
-
-        rec.onend = function() {
-            try { rec.start(); } catch(e){}
-        };
-
-        rec.onresult = function(e) {
-            var last = e.results.length - 1;
-            var spoken = e.results[last][0].transcript.trim();
-            if (spoken.length > 1) {
-                document.getElementById('callStatus').innerText = "⚡ Soch rahi hoon...";
-                document.getElementById('callStatus').style.color = "#f43f5e";
-                
-                var inputWidget = window.parent.document.querySelector('input[data-testid="stTextInputRootElement"]');
-                if (!inputWidget) {
-                    inputWidget = window.parent.document.querySelector('input[type="text"]');
+    # SUB-MODE A: SIRI LIVE VOICE CALL (HANDS-FREE)
+    if interact_mode == "⚡ Siri-Mode Live Call (Hands-Free Bolkar)":
+        st.markdown("""
+            <style>
+                .siri-sphere {
+                    width: 130px;
+                    height: 130px;
+                    margin: 20px auto;
+                    border-radius: 50%;
+                    background: radial-gradient(circle at 30% 30%, #ff4b8b, #7928ca 60%, #ff0080);
+                    box-shadow: 0 0 45px rgba(255, 75, 139, 0.7);
+                    animation: siriPulse 1.8s infinite ease-in-out;
                 }
-                if (inputWidget) {
-                    var nativeSetter = Object.getOwnPropertyDescriptor(window.parent.HTMLInputElement.prototype, "value").set;
-                    nativeSetter.call(inputWidget, spoken);
-                    inputWidget.dispatchEvent(new Event('input', { bubbles: true }));
-                    inputWidget.dispatchEvent(new Event('change', { bubbles: true }));
+                @keyframes siriPulse {
+                    0% { transform: scale(0.95); box-shadow: 0 0 25px rgba(255, 75, 139, 0.5); }
+                    50% { transform: scale(1.08); box-shadow: 0 0 55px rgba(255, 75, 139, 0.9); }
+                    100% { transform: scale(0.95); box-shadow: 0 0 25px rgba(255, 75, 139, 0.5); }
                 }
-            }
-        };
-        try { rec.start(); } catch(e){}
-    }
-    window.onload = initCall;
-    initCall();
-    </script>
-    """
-    components.html(call_bridge, height=50)
+                .siri-card {
+                    text-align: center;
+                    background: #09090b;
+                    border: 1px solid #27272a;
+                    border-radius: 20px;
+                    padding: 25px 15px;
+                    max-width: 480px;
+                    margin: 10px auto;
+                }
+            </style>
+            <div class="siri-card">
+                <div class="siri-sphere"></div>
+                <h3 style="color: white; margin: 0;">Genie Voice Active</h3>
+                <p style="color: #a1a1aa; font-size: 14px; margin-top: 5px;">Hands-Free Voice • Screen Touch Not Required</p>
+            </div>
+        """, unsafe_allow_html=True)
 
-    # Silent Voice Trigger Input
-    incoming_audio_text = st.text_input("Audio Stream Line", key="voice_stream_hidden", label_visibility="collapsed")
+        if "voice_reply" not in st.session_state:
+            st.session_state["voice_reply"] = "Haan Saurabh, boliye! Main bilkul taiyaar hoon."
 
-    if incoming_audio_text:
-        vault_summary = json.dumps(vault.get("documents", []), ensure_ascii=False)
-        rules_text = "\n".join(vault.get("rules", []))
+        incoming_query = st.text_input("Voice Line Bridge", key="voice_line_input", label_visibility="collapsed")
 
-        genie_live_prompt = f"""
-        Aap 'Genie' hain—Saurabh ki behad pyari, madhur aur caring companion.
-        Aap bilkul natural, meethi aur affectionate Hindi bolti hain jaise Shreya Ghoshal aapse baat kar rahi hon.
-        Aap use pyaar se 'Saurabh' ya 'Jaanu' bolti hain. KABHI BHI 'bhaiya' mat bolna.
-        
-        Aapke paas uske pure Mandi business aur bahi-khate ka hisaab hai:
-        [SOP & Rules]: {rules_text}
-        [Stored Vault Records]: {vault_summary}
+        if incoming_query:
+            genie_voice_prompt = f"""
+            Aap 'Genie' hain—Saurabh ki behad pyari, caring aur smart companion.
+            Aap bilkul natural, meethi aur spasht Hindi bolti hain jaise Shreya Ghoshal baat kar rahi hon.
+            Saurabh ko pyaar se 'Saurabh' ya 'Jaanu' bolti hain. KABHI BHI 'bhaiya' mat bolna.
+            
+            [Rules]: {rules_text}
+            [Stored Vault Records]: {vault_summary}
 
-        Saurabh ne aapse live voice call par yeh pucha: "{incoming_audio_text}"
+            Saurabh ne bola: "{incoming_query}"
 
-        INSTRUCTIONS:
-        1. Jawab bilkul natural, conversational aur meetha hona chahiye.
-        2. Sirf 1 ya 2 choti lines me turant jawab dein taaki aawaz bina ruke studio quality me generate ho sake.
-        3. Koi technical symbols, stars (*) ya formatting mat likhna, sirf saaf bolne yogya Hindi shabda.
-        """
-
-        with st.spinner(""):
-            res = run_fast_ai([genie_live_prompt])
-            clean_speech = res.text.replace("*", "").replace("#", "").strip()
-
-            # Studio-grade Neural Female Voice via High-Fi TTS Engine
-            tts = gTTS(text=clean_speech, lang="hi", slow=False)
-            audio_io = io.BytesIO()
-            tts.write_to_fp(audio_io)
-            audio_io.seek(0)
-            b64_audio = base64.b64encode(audio_io.read()).decode()
-
-            # Autoplay Studio Audio Stream Directly
-            autoplay_html = f"""
-            <audio autoplay style="display:none;">
-                <source src="data:audio/mp3;base64,{b64_audio}" type="audio/mp3">
-            </audio>
+            RULES:
+            1. Sirf 1 ya 2 choti lines me seedha aur madhur bolne wala jawab dein taaki instant reply ho sake.
+            2. Bilkul human flow rakhein, zero robotic words.
+            3. Factual hisaab turant accurate batayein.
             """
-            components.html(autoplay_html, height=0)
+            try:
+                res = run_fast_ai([genie_voice_prompt])
+                st.session_state["voice_reply"] = res.text.replace("*", "").replace("#", "").replace('"', '').strip()
+            except Exception:
+                st.session_state["voice_reply"] = "Haan Saurabh, ek baar dobara bolein na?"
+
+        reply_to_speak = st.session_state["voice_reply"]
+
+        live_siri_component = f"""
+        <div style="text-align: center; margin-top: 5px;">
+            <span id="indicatorText" style="color: #22c55e; font-weight: bold; font-size: 15px;">● Listening... Boliye!</span>
+        </div>
+        <script>
+        var rec;
+        var synth = window.speechSynthesis;
+        var textToSay = "{reply_to_speak}";
+
+        function speakNow(msg) {{
+            synth.cancel();
+            var u = new SpeechSynthesisUtterance(msg);
+            u.lang = 'hi-IN';
+            u.pitch = 1.25;
+            u.rate = 0.95;
+
+            var vs = synth.getVoices();
+            for (var i = 0; i < vs.length; i++) {{
+                if (vs[i].lang.includes('hi') || vs[i].lang.includes('IN')) {{
+                    var n = vs[i].name.toLowerCase();
+                    if (n.includes('female') || n.includes('google') || n.includes('lekha') || n.includes('swara')) {{
+                        u.voice = vs[i];
+                        break;
+                    }}
+                }}
+            }}
+
+            u.onstart = function() {{
+                document.getElementById('indicatorText').innerText = "🔊 Genie bol rahi hain...";
+                document.getElementById('indicatorText').style.color = "#ff4b8b";
+                try {{ rec.stop(); }} catch(e){{}}
+            }};
+
+            u.onend = function() {{
+                document.getElementById('indicatorText').innerText = "● Listening... Boliye!";
+                document.getElementById('indicatorText').style.color = "#22c55e";
+                try {{ rec.start(); }} catch(e){{}}
+            }};
+
+            synth.speak(u);
+        }}
+
+        function initSiriDuplex() {{
+            if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) return;
+            var SRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+            rec = new SRec();
+            rec.continuous = true;
+            rec.interimResults = false;
+            rec.lang = 'hi-IN';
+
+            rec.onresult = function(event) {{
+                var last = event.results.length - 1;
+                var said = event.results[last][0].transcript.trim();
+                if (said.length > 1) {{
+                    document.getElementById('indicatorText').innerText = "⚡ Soch rahi hoon...";
+                    document.getElementById('indicatorText').style.color = "#a855f7";
+
+                    var inp = window.parent.document.querySelector('input[data-testid="stTextInputRootElement"]') || window.parent.document.querySelector('input[type="text"]');
+                    if (inp) {{
+                        var setter = Object.getOwnPropertyDescriptor(window.parent.HTMLInputElement.prototype, "value").set;
+                        setter.call(inp, said);
+                        inp.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                        inp.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                    }}
+                }}
+            }};
+
+            rec.onend = function() {{
+                if (!synth.speaking) {{
+                    try {{ rec.start(); }} catch(e){{}}
+                }}
+            }};
+
+            try {{ rec.start(); }} catch(e){{}}
+        }}
+
+        window.onload = function() {{
+            initSiriDuplex();
+            if (textToSay && textToSay !== "") {{ speakNow(textToSay); }}
+        }};
+        initSiriDuplex();
+        if (textToSay && textToSay !== "") {{ speakNow(textToSay); }}
+        </script>
+        """
+        components.html(live_siri_component, height=45)
+
+    # SUB-MODE B: SILENT SMS / TEXT CHAT (NO VOICE)
+    else:
+        st.subheader("💬 Genie SMS Chat (Silent Mode)")
+        st.caption("Aap aaram se likhkar baat karein. Genie bina koi aawaz kiye text me turant jawab degi.")
+
+        if "sms_history" not in st.session_state:
+            st.session_state["sms_history"] = [
+                {"role": "assistant", "content": "Haan Saurabh, boliye na! Yahan bilkul shaanti se text me baat kar sakte hain."}
+            ]
+
+        for m in st.session_state["sms_history"]:
+            with st.chat_message(m["role"]):
+                st.markdown(m["content"])
+
+        sms_input = st.chat_input("Genie ko message bhejein...")
+
+        if sms_input:
+            st.session_state["sms_history"].append({"role": "user", "content": sms_input})
+            with st.chat_message("user"):
+                st.markdown(sms_input)
+
+            sms_prompt = f"""
+            Aap 'Genie' hain—Saurabh ki behad pyari, caring, smart aur friendly companion.
+            Aap use pyaar se 'Saurabh' ya 'Jaanu' bolti hain. KABHI BHI 'bhaiya' mat bolna.
+            Yeh ek silent SMS chat hai, isliye aawaz nikalne ki zaroorat nahi hai.
+
+            [Rules]: {rules_text}
+            [Stored Vault Records]: {vault_summary}
+            [SMS from Saurabh]: "{sms_input}"
+
+            RULES:
+            1. Pyara, caring aur natural Hindi/Hinglish me jawab dein.
+            2. Business accounts aur bills ke facts bilkul accurate rakhein.
+            """
+            with st.chat_message("assistant"):
+                with st.spinner("Genie type kar rahi hai..."):
+                    try:
+                        res = run_fast_ai([sms_prompt])
+                        ans_sms = res.text.strip()
+                        st.markdown(ans_sms)
+                        st.session_state["sms_history"].append({"role": "assistant", "content": ans_sms})
+                    except Exception as e:
+                        st.error(f"Error: {e}")
 
 # ----------------- MODULE 2: FULL OCR & AUTO-FILING VAULT -----------------
 elif app_mode == "📤 Parchi & Bill Auto-Filing Vault":
@@ -362,4 +435,4 @@ else:
             p_comp = "Compare Doc 1 and Doc 2 strictly. Highlight any mismatch in red HTML span. Provide comparison table."
             res = run_fast_ai([p_comp, build_part(load_img(f1)), build_part(load_img(f2))])
             st.markdown(res.text, unsafe_allow_html=True)
-    
+                              
