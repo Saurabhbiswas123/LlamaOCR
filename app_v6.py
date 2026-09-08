@@ -12,7 +12,7 @@ from datetime import datetime
 import pypdfium2 as pdfium
 from openpyxl.styles import PatternFill, Font
 
-st.set_page_config(page_title="Genie: Instant Siri Engine", layout="wide")
+st.set_page_config(page_title="Genie: Gemini Multimodal Live API", layout="wide")
 
 api_key = st.secrets.get("GEMINI_API_KEY")
 if not api_key:
@@ -79,35 +79,35 @@ with st.sidebar:
             st.caption(f"{i}. {r}")
     st.divider()
     app_mode = st.radio("Navigation:", [
-        "⚡ Genie Siri-Mode Live Call",
-        "💬 SMS / Silent Chat",
+        "⚡ Gemini Live WebSocket Call (Siri Speed)",
+        "💬 SMS / Text Chat (Likhkar)",
         "📤 Parchi & Bill Auto-Filing Vault",
         "🧮 Hisaab Samjhein (Doubt Solver)",
         "🔍 2-Document Forensic Matcher"
     ])
 
-# ----------------- MODULE 1: ZERO-LATENCY DIRECT SIRI LIVE CALL -----------------
-if app_mode == "⚡ Genie Siri-Mode Live Call":
+# ----------------- MODULE 1: GEMINI MULTIMODAL LIVE WEBSOCKET CALL -----------------
+if app_mode == "⚡ Gemini Live WebSocket Call (Siri Speed)":
     vault_summary = json.dumps(vault.get("documents", []), ensure_ascii=False)
     rules_text = "\n".join(vault.get("rules", []))
 
     st.markdown("""
         <style>
-            .siri-sphere {
+            .live-sphere {
                 width: 140px;
                 height: 140px;
                 margin: 20px auto;
                 border-radius: 50%;
-                background: radial-gradient(circle at 30% 30%, #ff2d75, #7928ca 60%, #ff0080);
+                background: radial-gradient(circle at 30% 30%, #ff2d75, #7928ca 60%, #00f2fe);
                 box-shadow: 0 0 50px rgba(255, 45, 117, 0.75);
-                animation: siriPulse 1.6s infinite ease-in-out;
+                animation: livePulse 1.6s infinite ease-in-out;
             }
-            @keyframes siriPulse {
+            @keyframes livePulse {
                 0% { transform: scale(0.95); box-shadow: 0 0 25px rgba(255, 45, 117, 0.5); }
-                50% { transform: scale(1.08); box-shadow: 0 0 60px rgba(255, 45, 117, 0.95); }
+                50% { transform: scale(1.08); box-shadow: 0 0 65px rgba(0, 242, 254, 0.85); }
                 100% { transform: scale(0.95); box-shadow: 0 0 25px rgba(255, 45, 117, 0.5); }
             }
-            .siri-card {
+            .live-card {
                 text-align: center;
                 background: #09090b;
                 border: 1px solid #27272a;
@@ -117,152 +117,209 @@ if app_mode == "⚡ Genie Siri-Mode Live Call":
                 margin: 10px auto;
             }
         </style>
-        <div class="siri-card">
-            <div class="siri-sphere"></div>
-            <h3 style="color: white; margin: 0; font-size: 20px;">Genie Live Voice Call</h3>
-            <p style="color: #a1a1aa; font-size: 14px; margin-top: 5px;">Hands-Free Voice Active • 0.1s Fast Response</p>
+        <div class="live-card">
+            <div class="live-sphere"></div>
+            <h3 style="color: white; margin: 0; font-size: 20px;">Genie Multimodal Live Stream</h3>
+            <p style="color: #a1a1aa; font-size: 13px; margin-top: 5px;">WebSocket Bidirectional Live Audio • Siri Sub-Second Latency</p>
         </div>
     """, unsafe_allow_html=True)
 
-    # DIRECT BROWSER-TO-GEMINI AUDIO STREAM BRIDGE (NO RERUN DELAY)
-    direct_voice_bridge = f"""
+    live_websocket_bridge = f"""
     <div style="text-align: center; margin-top: 10px;">
-        <span id="bridgeStatus" style="color: #22c55e; font-weight: bold; font-size: 16px;">● Sun rahi hoon... Boliye!</span>
+        <span id="socketStatus" style="color: #22c55e; font-weight: bold; font-size: 16px;">🟢 Live Stream Ready... Boliye!</span>
     </div>
+
     <script>
     const API_KEY = "{api_key}";
-    const RULES = `{rules_text}`;
-    const VAULT = `{vault_summary}`;
+    const SYSTEM_PROMPT = `Aap 'Genie' hain—Saurabh ki behad pyari, caring, smart aur meethi companion.
+Aap bilkul natural, madhur aur spasht Hindi bolti hain jaise Shreya Ghoshal baat kar rahi hon.
+Saurabh ko pyaar se 'Saurabh' ya 'Jaanu' bolti hain. KABHI BHI 'bhaiya' mat bolna.
+Aapke paas Mandi aur bahi-khate ka pura hisaab hai:
+Rules: {rules_text}
+Vault Data: {vault_summary}
+RULES:
+1. Seedha, madhur aur choti 1-2 lines me natural response dein.
+2. Zero robotic lag. Pure human flow.`;
 
-    var recognition;
-    var synth = window.speechSynthesis;
-    var isThinking = false;
+    let audioContext;
+    let ws;
+    let isConnected = false;
 
-    function getBestFemaleVoice() {{
-        var voices = synth.getVoices();
-        for (var i = 0; i < voices.length; i++) {{
-            var v = voices[i];
-            if (v.lang.includes('hi') || v.lang.includes('IN')) {{
-                var n = v.name.toLowerCase();
-                if (n.includes('google') || n.includes('female') || n.includes('lekha') || n.includes('swara')) {{
-                    return v;
+    async function initLiveSocket() {{
+        const url = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${{API_KEY}}`;
+        ws = new WebSocket(url);
+
+        ws.onopen = () => {{
+            document.getElementById('socketStatus').innerText = "🟢 WebSocket Connected • Sun rahi hoon...";
+            document.getElementById('socketStatus').style.color = "#22c55e";
+            isConnected = true;
+
+            // Send initial setup frame
+            const setupMsg = {{
+                setup: {{
+                    model: "models/gemini-2.0-flash-exp",
+                    generationConfig: {{
+                        responseModalities: ["AUDIO"],
+                        speechConfig: {{
+                            voiceConfig: {{
+                                prebuiltVoiceConfig: {{
+                                    voiceName: "Aoede" // Melodious feminine natural voice
+                                }}
+                            }}
+                        }}
+                    }},
+                    systemInstruction: {{
+                        parts: [{{ text: SYSTEM_PROMPT }}]
+                    }}
+                }}
+            }};
+            ws.send(JSON.stringify(setupMsg));
+            startMicAudioStream();
+        }};
+
+        ws.onmessage = async (event) => {{
+            document.getElementById('socketStatus').innerText = "🔊 Genie bol rahi hain...";
+            document.getElementById('socketStatus').style.color = "#ff2d75";
+
+            let data;
+            if (event.data instanceof Blob) {{
+                data = JSON.parse(await event.data.text());
+            }} else {{
+                data = JSON.parse(event.data);
+            }}
+
+            if (data.serverContent && data.serverContent.modelTurn) {{
+                const parts = data.serverContent.modelTurn.parts;
+                for (const p of parts) {{
+                    if (p.inlineData && p.inlineData.mimeType.startsWith("audio/")) {{
+                        playRawAudioChunk(p.inlineData.data);
+                    }}
                 }}
             }}
-        }}
-        return voices.find(v => v.lang.includes('hi')) || null;
-    }}
 
-    function speakReply(text) {{
-        synth.cancel();
-        var utter = new SpeechSynthesisUtterance(text);
-        utter.lang = 'hi-IN';
-        utter.pitch = 1.25;
-        utter.rate = 1.0;
-
-        var v = getBestFemaleVoice();
-        if (v) utter.voice = v;
-
-        utter.onstart = function() {{
-            document.getElementById('bridgeStatus').innerText = "🔊 Genie bol rahi hain...";
-            document.getElementById('bridgeStatus').style.color = "#ff2d75";
-            try {{ recognition.stop(); }} catch(e){{}}
+            if (data.serverContent && data.serverContent.turnComplete) {{
+                document.getElementById('socketStatus').innerText = "🟢 Sun rahi hoon... Boliye!";
+                document.getElementById('socketStatus').style.color = "#22c55e";
+            }}
         }};
 
-        utter.onend = function() {{
-            document.getElementById('bridgeStatus').innerText = "● Sun rahi hoon... Boliye!";
-            document.getElementById('bridgeStatus').style.color = "#22c55e";
-            isThinking = false;
-            try {{ recognition.start(); }} catch(e){{}}
+        ws.onerror = (e) => {{
+            // Fallback to high-speed REST endpoint if WebSocket is restricted on network
+            fallbackFastRest();
         }};
 
-        synth.speak(utter);
+        ws.onclose = () => {{
+            isConnected = false;
+        }};
     }}
 
-    async function queryGeminiDirect(userText) {{
-        isThinking = true;
-        document.getElementById('bridgeStatus').innerText = "⚡ Soch rahi hoon...";
-        document.getElementById('bridgeStatus').style.color = "#a855f7";
-
-        const prompt = `Aap 'Genie' hain—Saurabh ki behad pyari, madhur aur smart companion.
-        Aap bilkul natural, meethi aur spasht Hindi bolti hain jaise Shreya Ghoshal baat kar rahi hon.
-        Saurabh ko pyaar se 'Saurabh' ya 'Jaanu' bolti hain. KABHI BHI 'bhaiya' mat bolna.
-        Rules: ${{RULES}}
-        Vault Data: ${{VAULT}}
-        Saurabh ne aapse bola: "${{userText}}"
-        
-        RULES:
-        1. Sirf 1 ya 2 lines me seedha aur madhur bolne yogya jawab dein.
-        2. Bilkul human-like natural conversation (zero robotic words).
-        3. Factual hisaab turant accurate batayein.`;
-
+    async function startMicAudioStream() {{
         try {{
-            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${{API_KEY}}`, {{
+            const stream = await navigator.mediaDevices.getUserMedia({{ audio: true }});
+            audioContext = new (window.AudioContext || window.webkitAudioContext)({{ sampleRate: 16000 }});
+            const source = audioContext.createMediaStreamSource(stream);
+            const processor = audioContext.createScriptProcessor(2048, 1, 1);
+
+            source.connect(processor);
+            processor.connect(audioContext.destination);
+
+            processor.onaudioprocess = (e) => {{
+                if (!isConnected || ws.readyState !== WebSocket.OPEN) return;
+                const inputData = e.inputBuffer.getChannelData(0);
+                
+                // Convert to 16-bit Linear PCM
+                const pcm16 = new Int16Array(inputData.length);
+                for (let i = 0; i < inputData.length; i++) {{
+                    pcm16[i] = Math.max(-32768, Math.min(32767, inputData[i] * 32768));
+                }}
+
+                // Base64 encode
+                let binary = '';
+                const bytes = new Uint8Array(pcm16.buffer);
+                for (let i = 0; i < bytes.byteLength; i++) {{
+                    binary += String.fromCharCode(bytes[i]);
+                }}
+                const base64Audio = btoa(binary);
+
+                const audioFrame = {{
+                    realtimeInput: {{
+                        mediaChunks: [{{
+                            mimeType: "audio/pcm;rate=16000",
+                            data: base64Audio
+                        }}]
+                    }}
+                }};
+                ws.send(JSON.stringify(audioFrame));
+            }};
+        }} catch(err) {{
+            fallbackFastRest();
+        }}
+    }}
+
+    function playRawAudioChunk(base64Pcm) {{
+        if (!audioContext) {{
+            audioContext = new (window.AudioContext || window.webkitAudioContext)({{ sampleRate: 24000 }});
+        }}
+        const binaryString = atob(base64Pcm);
+        const len = binaryString.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {{
+            bytes[i] = binaryString.charCodeAt(i);
+        }}
+        const pcm16 = new Int16Array(bytes.buffer);
+        const float32 = new Float32Array(pcm16.length);
+        for (let i = 0; i < pcm16.length; i++) {{
+            float32[i] = pcm16[i] / 32768.0;
+        }}
+
+        const buffer = audioContext.createBuffer(1, float32.length, 24000);
+        buffer.getChannelData(0).set(float32);
+
+        const sourceNode = audioContext.createBufferSource();
+        sourceNode.buffer = buffer;
+        sourceNode.connect(audioContext.destination);
+        sourceNode.start();
+    }}
+
+    // Fallback if client network blocks raw WS upgrade
+    function fallbackFastRest() {{
+        var SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRec) return;
+        var r = new SpeechRec();
+        r.continuous = true;
+        r.lang = 'hi-IN';
+        r.onresult = async function(event) {{
+            var text = event.results[event.results.length - 1][0].transcript.trim();
+            document.getElementById('socketStatus').innerText = "⚡ Soch rahi hoon...";
+            
+            const p = `${{SYSTEM_PROMPT}}\\nSaurabh ne aapse bola: "${{text}}"`;
+            const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${{API_KEY}}`, {{
                 method: "POST",
                 headers: {{ "Content-Type": "application/json" }},
-                body: JSON.stringify({{
-                    contents: [{{ parts: [{{ text: prompt }}] }}]
-                }})
+                body: JSON.stringify({{ contents: [{{ parts: [{{ text: p }}] }}] }})
             }});
-            const data = await res.json();
+            const data = await resp.json();
             const reply = data.candidates[0].content.parts[0].text.replace(/[*#"]/g, "").trim();
-            speakReply(reply);
-        }} catch(err) {{
-            // Fallback to flash-lite
-            try {{
-                const res2 = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${{API_KEY}}`, {{
-                    method: "POST",
-                    headers: {{ "Content-Type": "application/json" }},
-                    body: JSON.stringify({{
-                        contents: [{{ parts: [{{ text: prompt }}] }}]
-                    }})
-                }});
-                const data2 = await res2.json();
-                const reply2 = data2.candidates[0].content.parts[0].text.replace(/[*#"]/g, "").trim();
-                speakReply(reply2);
-            }} catch(e) {{
-                speakReply("Haan Saurabh, ek baar dobara bolein na?");
-            }}
-        }}
+
+            var synth = window.speechSynthesis;
+            var u = new SpeechSynthesisUtterance(reply);
+            u.lang = 'hi-IN';
+            u.pitch = 1.25;
+            synth.speak(u);
+        }};
+        r.start();
     }}
 
-    function initVoiceListener() {{
-        if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) return;
-        var SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-        recognition = new SpeechRec();
-        recognition.continuous = true;
-        recognition.interimResults = false;
-        recognition.lang = 'hi-IN';
-
-        recognition.onresult = function(event) {{
-            if (isThinking) return;
-            var last = event.results.length - 1;
-            var spoken = event.results[last][0].transcript.trim();
-            if (spoken.length > 1) {{
-                queryGeminiDirect(spoken);
-            }}
-        }};
-
-        recognition.onend = function() {{
-            if (!synth.speaking && !isThinking) {{
-                try {{ recognition.start(); }} catch(e){{}}
-            }}
-        }};
-
-        try {{ recognition.start(); }} catch(e){{}}
-    }}
-
-    window.onload = function() {{
-        initVoiceListener();
-    }};
-    initVoiceListener();
+    window.onload = initLiveSocket;
+    initLiveSocket();
     </script>
     """
-    components.html(direct_voice_bridge, height=50)
+    components.html(live_websocket_bridge, height=50)
 
 # ----------------- MODULE 2: SILENT SMS / TEXT CHAT -----------------
-elif app_mode == "💬 SMS / Silent Chat":
+elif app_mode == "💬 SMS / Text Chat (Likhkar)":
     st.subheader("💬 Genie SMS Chat (Silent Mode)")
-    st.caption("Likhkar baat karein. Genie bina aawaz kiye text me turant jawab degi.")
+    st.caption("Aap aaram se likhkar baat karein. Genie text me turant jawab degi.")
 
     if "sms_history" not in st.session_state:
         st.session_state["sms_history"] = [
@@ -425,21 +482,4 @@ elif app_mode == "📤 Parchi & Bill Auto-Filing Vault":
 # ----------------- MODULE 4: DOUBT SOLVER -----------------
 elif app_mode == "🧮 Hisaab Samjhein (Doubt Solver)":
     st.subheader("🔍 Instant Math Breakdown")
-    f_d = st.file_uploader("Parchi Dalein", type=["jpg", "jpeg", "png", "pdf"], key="d_solv")
-    query_m = st.text_input("Kya calculation samajhni hai?")
-    if f_d and query_m and st.button("🧠 Explain Step-by-Step"):
-        with st.spinner("Calculating..."):
-            res = run_fast_ai([f"Explain mandi calculation step-by-step in Hindi for: {query_m}", build_part(load_img(f_d))])
-            st.markdown(res.text)
-
-# ----------------- MODULE 5: 2-DOCUMENT FORENSIC MATCHER -----------------
-else:
-    st.subheader("🔍 2-Document Forensic Cross-Check (0.0001% Variance)")
-    c1, c2 = st.columns(2)
-    with c1: f1 = st.file_uploader("Document 1", type=["jpg", "jpeg", "png", "pdf"], key="f1")
-    with c2: f2 = st.file_uploader("Document 2", type=["jpg", "jpeg", "png", "pdf"], key="f2")
-    if f1 and f2 and st.button("Run Forensic Cross-Check"):
-        with st.spinner("Analyzing micro-deviations..."):
-            p_comp = "Compare Doc 1 and Doc 2 strictly. Highlight any mismatch in red HTML span. Provide comparison table."
-            res = run_fast_ai([p_comp, build_part(load_img(f1)), build_part(load_img(f2))])
-            st.markdown(res.text, unsafe_allow_html=True)
+    f_d = st.file_uploader("Parchi Dalein", type=["jpg", "jpeg"
