@@ -3,6 +3,7 @@ import google.generativeai as genai
 from PIL import Image
 import pandas as pd
 import io
+import time
 
 st.set_page_config(page_title="Mandi OCR & Audit Matcher", layout="wide")
 st.title("Mandi OCR: Table Extraction & Deep Audit Cross-Check")
@@ -21,6 +22,24 @@ def build_payload(uploaded_file):
     else:
         return Image.open(uploaded_file)
 
+# Rate-limit safe API caller
+def call_gemini_with_retry(payload_list, max_retries=3):
+    for attempt in range(max_retries):
+        try:
+            response = model.generate_content(payload_list)
+            return response.text
+        except Exception as e:
+            error_str = str(e)
+            if "429" in error_str or "ResourceExhausted" in error_str:
+                if attempt < max_retries - 1:
+                    wait_time = (attempt + 1) * 8
+                    st.warning(f"API busy/limit hit. Retrying in {wait_time}s... (Attempt {attempt+1}/{max_retries})")
+                    time.sleep(wait_time)
+                else:
+                    raise Exception("Google API quota full ho gaya hai. Kripya 1 minute ruk kar dobara koshish karein.")
+            else:
+                raise e
+
 app_mode = st.sidebar.radio("Mode Select Karein:", ["Single Document OCR", "2 Documents Cross-Check & Audit"])
 
 # ----------------- MODE 1: Single Document OCR -----------------
@@ -34,23 +53,21 @@ if app_mode == "Single Document OCR":
             st.info(f"📄 Uploaded PDF: {uploaded_file.name}")
 
         if st.button("Extract Data to Table"):
-            with st.spinner("Data extraction ongoing..."):
+            with st.spinner("Makka hisaab scan ho raha hai (Token-safe mode)..."):
                 prompt = """
-                Extract all handwritten and printed records from this document.
-                Convert them into a structured Markdown Table format.
-                Columns: [S.No, Date, Name/Details, Weight/Qty, Rate, Total Amount].
+                Extract all handwritten and printed mandi ledger records from this document.
+                Convert them into a clean, structured Markdown Table format.
+                Columns typically needed: [S.No, Date, Farmer/Trader Name, Item (Makka/Maize), Weight/Bags, Rate, Net Amount].
                 
-                CRITICAL INSTRUCTION:
-                If any digit, word, or calculation is blurry, overwritten, or doubtful, wrap that specific text inside:
-                `<span style='background-color: #ffbf00; color: black; font-weight: bold; padding: 2px 5px; border-radius: 3px;'>TEXT [DOUBT]</span>`.
-                Only return the table and a short note on doubtful entries.
+                If any entry is doubtful, highlight it using:
+                `<span style='background-color: #ff9800; color: white; padding: 2px 4px; border-radius: 3px;'>VALUE [UNCLEAR]</span>`.
+                Only return the table and critical ledger summary.
                 """
-                payload = [prompt, build_payload(uploaded_file)]
-                response = model.generate_content(payload)
-                st.markdown(response.text, unsafe_allow_html=True)
-
                 try:
-                    lines = [line.strip() for line in response.text.strip().split("\n") if "|" in line]
+                    res_text = call_gemini_with_retry([prompt, build_payload(uploaded_file)])
+                    st.markdown(res_text, unsafe_allow_html=True)
+
+                    lines = [line.strip() for line in res_text.strip().split("\n") if "|" in line]
                     if len(lines) > 2:
                         raw_data = [[c.strip() for c in line.split("|")[1:-1]] for line in lines]
                         df = pd.DataFrame(raw_data[2:], columns=raw_data[0])
@@ -60,11 +77,11 @@ if app_mode == "Single Document OCR":
                         st.download_button(
                             label="Download as Excel Sheet (.xlsx)",
                             data=output.getvalue(),
-                            file_name="mandi_ledger_data.xlsx",
+                            file_name="mandi_makka_data.xlsx",
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                         )
-                except Exception:
-                    pass
+                except Exception as ex:
+                    st.error(f"Execution Error: {ex}")
 
 # ----------------- MODE 2: 2 Documents Deep Cross-Check -----------------
 else:
@@ -72,14 +89,14 @@ else:
     col1, col2 = st.columns(2)
 
     with col1:
-        doc1 = st.file_uploader("Upload First Document (Parchi / Ledger)", type=["jpg", "jpeg", "png", "pdf"], key="doc1")
+        doc1 = st.file_uploader("Upload First Document", type=["jpg", "jpeg", "png", "pdf"], key="doc1")
         if doc1 and doc1.type != "application/pdf":
             st.image(Image.open(doc1), caption="Document 1")
         elif doc1:
             st.info(f"📄 Doc 1: {doc1.name}")
 
     with col2:
-        doc2 = st.file_uploader("Upload Second Document (Challan / Bill)", type=["jpg", "jpeg", "png", "pdf"], key="doc2")
+        doc2 = st.file_uploader("Upload Second Document", type=["jpg", "jpeg", "png", "pdf"], key="doc2")
         if doc2 and doc2.type != "application/pdf":
             st.image(Image.open(doc2), caption="Document 2")
         elif doc2:
@@ -87,48 +104,25 @@ else:
 
     if doc1 and doc2:
         if st.button("Compare & Highlight Differences"):
-            with st.spinner("Dono documents ko 0.0001% precision par audit aur highlight kiya ja raha hai..."):
+            with st.spinner("Dono documents ka precision audit chal raha hai..."):
                 audit_prompt = """
-                You are a forensic auditor for Indian Mandi receipts, kachhi parchi, bills, and ledger books.
-                Compare Document 1 and Document 2 down to the smallest granular detail (including 0.0001% numerical deviations, slight spelling differences, line omissions, date mismatch, or rate mismatches).
+                Compare Document 1 and Document 2 down to the smallest detail (even 0.0001% numerical/weight differences).
+                Wrap mismatched items in:
+                `<span style='background-color: #ff4b4b; color: white; padding: 2px 5px; border-radius: 3px;'>VALUE (MISMATCH)</span>`.
+                Wrap unclear values in:
+                `<span style='background-color: #ff9800; color: white; padding: 2px 5px; border-radius: 3px;'>VALUE [UNCLEAR]</span>`.
 
-                HIGHLIGHTING INSTRUCTIONS:
-                1. Whenever you find ANY difference, discrepancy, or mismatch between Doc 1 and Doc 2, wrap the mismatched text in BOTH columns with:
-                   `<span style='background-color: #ff4b4b; color: white; font-weight: bold; padding: 2px 6px; border-radius: 4px;'>VALUE (MISMATCH)</span>`.
-                2. If an entry is doubtful or difficult to read clearly, wrap it with:
-                   `<span style='background-color: #ff9800; color: white; font-weight: bold; padding: 2px 6px; border-radius: 4px;'>VALUE [UNCLEAR]</span>`.
-
-                Structure the final audit report strictly as follows:
-
-                ### 1. Audit Verdict
-                - State **MATCH CONFIRMED** in green or **CRITICAL DIFFERENCES DETECTED** in bold red.
-
-                ### 2. Discrepancies & Doubtful Items Table
-                Provide a Markdown table with colored highlights:
-                | Line / Item | Doc 1 Record | Doc 2 Record | Variance / Nature of Doubt |
-                |---|---|---|---|
-                *(If 100% identical without doubt, write "No differences or doubtful entries detected.")*
-
-                ### 3. Quantitative & Monetary Verification
-                - **Doc 1 Total Weight vs Doc 2 Total Weight**: (highlight difference if any)
-                - **Doc 1 Total Amount vs Doc 2 Total Amount**: (highlight difference if any)
-                - **Math Calculation Accuracy**: Check if Rate x Weight = Total Amount holds true on both papers.
-
-                ### 4. Direct Action Points
-                List every exact field that the human accountant needs to double check immediately.
+                Output structure:
+                1. Verdict (MATCH or DISCREPANCY DETECTED)
+                2. Markdown Discrepancies Table
+                3. Total Weight & Amount Reconciliation
                 """
-
-                payload1 = build_payload(doc1)
-                payload2 = build_payload(doc2)
-
                 try:
-                    response = model.generate_content([
+                    res_text = call_gemini_with_retry([
                         audit_prompt,
-                        "Document 1:", payload1,
-                        "Document 2:", payload2
+                        "Doc 1:", build_payload(doc1),
+                        "Doc 2:", build_payload(doc2)
                     ])
-                    # Enable unsafe_allow_html to render red/yellow color tags
-                    st.markdown(response.text, unsafe_allow_html=True)
-                except Exception as e:
-                    st.error(f"Audit failed: {e}")
-                    
+                    st.markdown(res_text, unsafe_allow_html=True)
+                except Exception as ex:
+                    st.error(f"Audit Error: {ex}")
