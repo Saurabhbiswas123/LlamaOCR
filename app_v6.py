@@ -12,8 +12,8 @@ from datetime import datetime
 import pypdfium2 as pdfium
 from openpyxl.styles import PatternFill, Font
 
-st.set_page_config(page_title="Mandi AI Master Vault & Forensic OCR", layout="wide")
-st.title("🌾 Mandi AI: Enterprise Autonomous Storage, Vault & Forensic OCR")
+st.set_page_config(page_title="Mandi AI Master Vault & Hands-Free Assistant", layout="wide")
+st.title("🌾 Mandi AI: Enterprise Autonomous Vault, Hands-Free Munim & Forensic OCR")
 
 api_key = st.secrets.get("GEMINI_API_KEY")
 if not api_key:
@@ -21,6 +21,20 @@ if not api_key:
     st.stop()
 
 client = genai.Client(api_key=api_key)
+
+ACTIVE_MODELS = ["gemini-3.6-flash", "gemini-3.5-flash-lite"]
+
+def generate_with_fallback(contents, config=None):
+    last_err = None
+    for m in ACTIVE_MODELS:
+        try:
+            if config:
+                return client.models.generate_content(model=m, contents=contents, config=config)
+            return client.models.generate_content(model=m, contents=contents)
+        except Exception as e:
+            last_err = e
+            continue
+    raise Exception(f"AI Service Unavailable: {last_err}")
 
 # ----------------- PHYSICAL FILE STORAGE & VAULT DIRECTORY -----------------
 STORAGE_DIR = "vault_files"
@@ -84,14 +98,195 @@ with st.sidebar:
 
     st.divider()
     app_mode = st.radio("Navigation:", [
+        "Hands-Free Genie Voice Assistant",
         "Upload, OCR & Auto-Filing Vault",
-        "Autonomous Smart Retrieval (Search & Recall)",
         "Explain Math (Doubt Solver)",
         "2-Document Forensic Matcher"
     ])
 
-# ----------------- MODULE 1: Full Ledger OCR, Auto-Filing & Persistent Storage -----------------
-if app_mode == "Upload, OCR & Auto-Filing Vault":
+# ----------------- MODULE 1: Hands-Free Genie Wake-Word Assistant -----------------
+if app_mode == "Hands-Free Genie Voice Assistant":
+    st.subheader("🧞 Genie Voice Assistant (Always Listening)")
+    st.info("💡 **Wake Word Active:** Screen ko touch kiye bina sirf boliye **'Hey Genie'** ya **'Genie'**; Genie turant active hokar aapse baat karegi.")
+
+    handsfree_html = """
+    <div style="background: #1e293b; padding: 14px; border-radius: 10px; border: 1px solid #334155; margin-bottom: 15px; display: flex; align-items: center; justify-content: space-between;">
+        <div>
+            <span id="genieIndicator" style="display: inline-block; width: 14px; height: 14px; border-radius: 50%; background-color: #22c55e; margin-right: 8px;"></span>
+            <strong id="genieStatus" style="color: #f8fafc; font-size: 15px;">Genie sun rahi hai (Wake Word: 'Hey Genie')...</strong>
+        </div>
+        <button id="toggleBtn" onclick="toggleContinuousWake()" style="background: #0284c7; color: white; border: none; padding: 6px 14px; border-radius: 6px; font-weight: bold; cursor: pointer;">
+            Restart Mic
+        </button>
+    </div>
+
+    <script>
+    var continuousRec;
+    var isAwake = false;
+
+    function initGenieListener() {
+        if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+            document.getElementById('genieStatus').innerText = "Browser Web Speech support nahi karta.";
+            return;
+        }
+
+        var SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+        continuousRec = new SpeechRec();
+        continuousRec.continuous = true;
+        continuousRec.interimResults = true;
+        continuousRec.lang = 'hi-IN';
+
+        continuousRec.onstart = function() {
+            document.getElementById('genieIndicator').style.backgroundColor = "#22c55e";
+            document.getElementById('genieStatus').innerText = "Genie sun rahi hai (Boliye 'Hey Genie')...";
+        };
+
+        continuousRec.onerror = function() {
+            try { continuousRec.start(); } catch(e) {}
+        };
+
+        continuousRec.onend = function() {
+            try { continuousRec.start(); } catch(e) {}
+        };
+
+        continuousRec.onresult = function(event) {
+            for (var i = event.resultIndex; i < event.results.length; ++i) {
+                var transcript = event.results[i][0].transcript.toLowerCase().trim();
+                
+                if (!isAwake && (transcript.includes("genie") || transcript.includes("gini") || transcript.includes("hey genie") || transcript.includes("he genie") || transcript.includes("ji ni"))) {
+                    isAwake = true;
+                    document.getElementById('genieIndicator').style.backgroundColor = "#ef4444";
+                    document.getElementById('genieStatus').innerText = "🔴 Genie Active! Sawal boliye...";
+                    
+                    var synth = window.speechSynthesis;
+                    synth.cancel();
+                    var greeting = new SpeechSynthesisUtterance("Haan Saurabh ji, boliye! Kya seva karoon?");
+                    greeting.lang = 'hi-IN';
+                    greeting.rate = 1.0;
+                    synth.speak(greeting);
+                    return;
+                }
+
+                if (isAwake && event.results[i].isFinal) {
+                    isAwake = false;
+                    document.getElementById('genieIndicator').style.backgroundColor = "#22c55e";
+                    document.getElementById('genieStatus').innerText = "Process ho raha hai: '" + transcript + "'";
+
+                    var textInput = window.parent.document.querySelector('input[aria-label="Genie se kuch bhi poochein:"]');
+                    if (textInput) {
+                        textInput.value = transcript;
+                        textInput.dispatchEvent(new Event('input', { bubbles: true }));
+                        textInput.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                }
+            }
+        };
+
+        try { continuousRec.start(); } catch(e) {}
+    }
+
+    function toggleContinuousWake() {
+        if (continuousRec) {
+            try { continuousRec.stop(); } catch(e) {}
+        }
+        initGenieListener();
+    }
+
+    window.onload = initGenieListener;
+    initGenieListener();
+    </script>
+    """
+    components.html(handsfree_html, height=75)
+
+    if "chat_history" not in st.session_state:
+        st.session_state["chat_history"] = [
+            {"role": "assistant", "content": "Namaste Saurabh ji! Main Genie hoon, aapki apni AI Munim. Jab bhi zaroorat ho, bas boliye 'Hey Genie' aur apna sawal poochein. Main turant jawab dungi."}
+        ]
+
+    for msg in st.session_state["chat_history"]:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+
+    user_query = st.chat_input("Genie se kuch bhi poochein:")
+
+    if user_query:
+        st.session_state["chat_history"].append({"role": "user", "content": user_query})
+        with st.chat_message("user"):
+            st.markdown(user_query)
+
+        vault_summary = []
+        for doc in vault.get("documents", []):
+            vault_summary.append({
+                "doc_id": doc.get("doc_id"),
+                "filename": doc.get("filename"),
+                "category": doc.get("category"),
+                "date": doc.get("date"),
+                "truck_no": doc.get("truck_no"),
+                "parties": doc.get("parties"),
+                "summary": doc.get("summary"),
+                "records": doc.get("records")
+            })
+
+        persistent_rules_text = "\n".join([r.get("rule", "") for r in vault.get("business_knowledge", [])])
+
+        genie_prompt = f"""
+        You are 'Genie', an authentic, warm, sharp, respectful, and friendly accounting AI partner for Saurabh Biswas's Mandi and grain trading business.
+        The user addresses you as 'Genie'. You speak like a dedicated, real human partner who knows every single penny of the accounts.
+
+        [SAVED BUSINESS RULES & SOP]:
+        {persistent_rules_text}
+
+        [ALL SAVED BUSINESS RECORDS & VAULT DOCUMENTS]:
+        {json.dumps(vault_summary, ensure_ascii=False)}
+
+        [USER QUERY]: "{user_query}"
+
+        RULES:
+        1. Always speak in natural, friendly, respectful Hindi/Hinglish.
+        2. Answer directly and concisely like an expert Munim.
+        3. If asked about previous bills, truck movements, farmers, weights, or amounts, fetch exact factual figures from the vault.
+        4. If a document matches, mention its filename so it can be previewed.
+        5. Keep responses crisp and ready for speech synthesis.
+        """
+
+        with st.chat_message("assistant"):
+            with st.spinner("Genie hisaab nikaal rahi hai..."):
+                try:
+                    res = generate_with_fallback([genie_prompt])
+                    ans_text = res.text.strip()
+                    st.markdown(ans_text)
+                    st.session_state["chat_history"].append({"role": "assistant", "content": ans_text})
+
+                    matched_docs = [d for d in vault.get("documents", []) if d.get("doc_id") in ans_text or d.get("filename") in ans_text]
+                    if matched_docs:
+                        st.divider()
+                        st.subheader("📂 Document Preview")
+                        for m_doc in matched_docs:
+                            p_path = m_doc.get("stored_path")
+                            if p_path and os.path.exists(p_path):
+                                if p_path.lower().endswith(".pdf"):
+                                    pdf_rend = pdfium.PdfDocument(p_path)[0].render(scale=2).to_pil()
+                                    st.image(pdf_rend, caption=m_doc.get('filename'), width=500)
+                                else:
+                                    st.image(Image.open(p_path), caption=m_doc.get('filename'), width=500)
+
+                    clean_voice = ans_text.replace('"', '\\"').replace('\n', ' ')
+                    components.html(f"""
+                    <script>
+                        var synth = window.speechSynthesis;
+                        synth.cancel();
+                        var utter = new SpeechSynthesisUtterance("{clean_voice}");
+                        utter.lang = 'hi-IN';
+                        utter.rate = 1.0;
+                        synth.speak(utter);
+                    </script>
+                    """, height=0)
+
+                except Exception as ex:
+                    st.error(f"Genie error: {ex}")
+
+# ----------------- MODULE 2: Full Ledger OCR & Auto-Filing -----------------
+elif app_mode == "Upload, OCR & Auto-Filing Vault":
     st.subheader("📤 Upload Document (Auto-Filing & Forensic Math Verification)")
     up_file = st.file_uploader("Document upload karein (Parchi / Bill / Challan)", type=["jpg", "jpeg", "png", "pdf"])
 
@@ -131,8 +326,7 @@ if app_mode == "Upload, OCR & Auto-Filing Vault":
                 Return ONLY valid raw JSON.
                 """
                 try:
-                    res = client.models.generate_content(
-                        model="gemini-2.5-flash",
+                    res = generate_with_fallback(
                         contents=[prompt, build_part_from_pil(source_image)],
                         config=types.GenerateContentConfig(
                             response_mime_type="application/json",
@@ -178,12 +372,12 @@ if app_mode == "Upload, OCR & Auto-Filing Vault":
                     st.session_state["base_image"] = source_image
                     st.session_state["current_doc"] = doc_entry
 
-                    st.success(f"🎉 Document 100% processed aur auto-archive ho gaya folder: [{category}] me!")
+                    st.success(f"🎉 Document process ho kar save ho gaya: [{category}] me!")
 
                 except Exception as ex:
                     st.error(f"Processing Error: {ex}")
 
-        # Post-Processing & Rendering
+        # Post-Processing
         if "active_records" in st.session_state and "base_image" in st.session_state:
             records = st.session_state["active_records"]
             base_img = st.session_state["base_image"].copy()
@@ -359,128 +553,6 @@ if app_mode == "Upload, OCR & Auto-Filing Vault":
             """
             components.html(tts_html, height=65)
 
-# ----------------- MODULE 2: Autonomous Smart Retrieval (Search & Recall) -----------------
-elif app_mode == "Autonomous Smart Retrieval (Search & Recall)":
-    st.subheader("🗄️ Autonomous Vault & Universal AI Assistant")
-    st.caption("Aapka har document categorized safe hai. Bol kar ya likh kar kisi bhi purane hisaab ya gaadi ka bill maangein.")
-
-    speech_component = """
-    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
-        <button id="micBtn" onclick="toggleListening()" style="background-color: #0088cc; color: white; border: none; padding: 10px 18px; font-size: 15px; border-radius: 6px; cursor: pointer; font-weight: bold;">
-            🎙️ Bolkar Maangein (Mic Hold/Click)
-        </button>
-        <span id="statusText" style="font-size: 14px; color: #888;">Mic Ready</span>
-    </div>
-    <script>
-        var recognition;
-        var recognizing = false;
-        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-            var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-            recognition = new SpeechRecognition();
-            recognition.lang = 'hi-IN';
-            recognition.continuous = false;
-
-            recognition.onstart = function() {
-                recognizing = true;
-                document.getElementById('statusText').innerText = '🔴 Sun raha hoon... Boliye!';
-                document.getElementById('micBtn').style.backgroundColor = '#cc0000';
-            };
-            recognition.onend = function() {
-                recognizing = false;
-                document.getElementById('statusText').innerText = 'Mic band.';
-                document.getElementById('micBtn').style.backgroundColor = '#0088cc';
-            };
-            recognition.onresult = function(event) {
-                var transcript = event.results[0][0].transcript;
-                document.getElementById('statusText').innerText = 'Samjha: "' + transcript + '"';
-                var textInput = window.parent.document.querySelector('input[aria-label="Vault se kuch bhi poochein ya maangein:"]');
-                if (textInput) {
-                    textInput.value = transcript;
-                    textInput.dispatchEvent(new Event('input', { bubbles: true }));
-                    textInput.dispatchEvent(new Event('change', { bubbles: true }));
-                }
-            };
-        }
-        function toggleListening() {
-            if (recognizing) { recognition.stop(); }
-            else if (recognition) { recognition.start(); }
-        }
-    </script>
-    """
-    components.html(speech_component, height=55)
-
-    search_query = st.chat_input("Vault se kuch bhi poochein ya maangein:")
-
-    if search_query:
-        with st.chat_message("user"):
-            st.markdown(search_query)
-
-        vault_summary = []
-        for doc in vault.get("documents", []):
-            vault_summary.append({
-                "doc_id": doc.get("doc_id"),
-                "filename": doc.get("filename"),
-                "category": doc.get("category"),
-                "date": doc.get("date"),
-                "truck_no": doc.get("truck_no"),
-                "parties": doc.get("parties"),
-                "summary": doc.get("summary"),
-                "records": doc.get("records")
-            })
-
-        retrieval_prompt = f"""
-        You are 'Mandi Vault Memory Intelligence'.
-        The user wants to find, recall, or analyze records from stored documents.
-
-        [ENTIRE ARCHIVE METADATA]:
-        {json.dumps(vault_summary, ensure_ascii=False)}
-
-        [USER INQUIRY]: "{search_query}"
-
-        INSTRUCTIONS:
-        1. Answer clearly in Hindi/Hinglish.
-        2. Mention exact details: Date, Truck No, Party Name, Total Amount, and Category.
-        3. If you find matching documents, specify their exact 'doc_id' and 'filename' so the app can render them.
-        """
-
-        with st.chat_message("assistant"):
-            with st.spinner("Vault scan aur document matching chal raha hai..."):
-                try:
-                    res = client.models.generate_content(
-                        model="gemini-2.5-flash",
-                        contents=[retrieval_prompt]
-                    )
-                    ans_text = res.text.strip()
-                    st.markdown(ans_text)
-
-                    matched_docs = [d for d in vault.get("documents", []) if d.get("doc_id") in ans_text or d.get("filename") in ans_text]
-                    if matched_docs:
-                        st.divider()
-                        st.subheader("📂 Matched Physical Document Preview")
-                        for m_doc in matched_docs:
-                            st.write(f"**Document:** `{m_doc.get('filename')}` | **Folder:** `{m_doc.get('category')}`")
-                            p_path = m_doc.get("stored_path")
-                            if p_path and os.path.exists(p_path):
-                                if p_path.lower().endswith(".pdf"):
-                                    pdf_rend = pdfium.PdfDocument(p_path)[0].render(scale=2).to_pil()
-                                    st.image(pdf_rend, caption=m_doc.get('filename'), width=500)
-                                else:
-                                    st.image(Image.open(p_path), caption=m_doc.get('filename'), width=500)
-
-                    clean_voice = ans_text.replace('"', '\\"').replace('\n', ' ')
-                    components.html(f"""
-                    <script>
-                        var synth = window.speechSynthesis;
-                        synth.cancel();
-                        var utter = new SpeechSynthesisUtterance("{clean_voice}");
-                        utter.lang = 'hi-IN';
-                        synth.speak(utter);
-                    </script>
-                    """, height=0)
-
-                except Exception as ex:
-                    st.error(f"Search failed: {ex}")
-
 # ----------------- MODULE 3: Instant Math Explanation -----------------
 elif app_mode == "Explain Math (Doubt Solver)":
     st.subheader("🔍 Instant Calculation Breakdown & Explanation")
@@ -498,10 +570,7 @@ elif app_mode == "Explain Math (Doubt Solver)":
             3. Did the munim make an arithmetic mistake? State the difference in Rupees.
             """
             try:
-                res = client.models.generate_content(
-                    model="gemini-2.5-flash",
-                    contents=[math_prompt, img_part]
-                )
+                res = generate_with_fallback([math_prompt, img_part])
                 st.markdown(res.text)
             except Exception as e:
                 st.error(f"Error: {e}")
@@ -524,10 +593,7 @@ else:
             2. Detailed Markdown Comparison Table
             """
             try:
-                res = client.models.generate_content(
-                    model="gemini-2.5-flash",
-                    contents=[prompt, build_part_from_pil(load_source_image(d1)), build_part_from_pil(load_source_image(d2))]
-                )
+                res = generate_with_fallback([prompt, build_part_from_pil(load_source_image(d1)), build_part_from_pil(load_source_image(d2))])
                 st.markdown(res.text, unsafe_allow_html=True)
             except Exception as e:
                 st.error(f"Audit match error: {e}")
