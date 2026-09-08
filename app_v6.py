@@ -12,7 +12,7 @@ from datetime import datetime
 import pypdfium2 as pdfium
 from openpyxl.styles import PatternFill, Font
 
-st.set_page_config(page_title="Mandi AI - World Class Enterprise OCR", layout="wide")
+st.set_page_config(page_title="Mandi AI - Enterprise OCR & Genie", layout="wide")
 st.title("🌾 Mandi AI: World-Class Enterprise OCR, Forensic Audit & Genie Companion")
 
 api_key = st.secrets.get("GEMINI_API_KEY")
@@ -101,7 +101,7 @@ if app_mode == "📤 World-Class OCR to Clean Excel (Visual Audit)":
                 p_ocr = """
                 You are a world-class forensic OCR engine designed for Indian Mandi registers, kachhi parchi, and grain trade bills.
                 Extract EVERY SINGLE line item, farmer/trader name, weight, rate, and written amount into strict structured JSON.
-                Do not miss any row, even if handwriting is complex or overlapping.
+                Do not leave rate or written amount blank or null. Extract exact numbers visible on paper.
 
                 Format:
                 {
@@ -111,7 +111,7 @@ if app_mode == "📤 World-Class OCR to Clean Excel (Visual Audit)":
                   "records": [
                     {
                       "s_no": 1,
-                      "party_name": "Farmer or Trader Name",
+                      "party_name": "Farmer or Merchant Name",
                       "item": "Crop / Commodity",
                       "weight": 25.50,
                       "rate": 2100.0,
@@ -459,4 +459,4 @@ elif app_mode == "💬 SMS / Text Chat":
 
 # ----------------- MODULE 4: DOUBT SOLVER -----------------
 elif app_mode == "🧮 Hisaab Samjhein (Doubt Solver)":
-    st.subheader("🔍 Instant Math Breakdow
+    st.subheader("🔍 
