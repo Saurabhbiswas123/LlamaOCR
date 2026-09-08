@@ -1,9 +1,5 @@
-groq
-python-dotenv
-numpy
 streamlit
-langchain-groq
-langchain_community
-pillow
-google-generativeai
+google-genai
+pandas
 openpyxl
+pillow
