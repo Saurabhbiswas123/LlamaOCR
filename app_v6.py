@@ -1,175 +1,254 @@
 import streamlit as st
-import google.generativeai as genai
-from PIL import Image
+from google import genai
+from google.genai import types
+from PIL import Image, ImageEnhance
 import pandas as pd
 import io
-import time
+import json
 import re
 from openpyxl.styles import PatternFill, Font
 
-st.set_page_config(page_title="Mandi OCR & Audit Matcher", layout="wide")
-st.title("Mandi OCR: Strict Audit & Doubt Highlighting")
+st.set_page_config(page_title="Forensic Mandi Ledger & Math Audit", layout="wide")
+st.title("🛡️ Enterprise Mandi OCR & Deep Arithmetic Verification Engine")
 
 api_key = st.secrets.get("GEMINI_API_KEY")
 if not api_key:
     st.error("Secrets me GEMINI_API_KEY configure karein.")
     st.stop()
 
-genai.configure(api_key=api_key)
-model = genai.GenerativeModel("gemini-3.6-flash")
+client = genai.Client(api_key=api_key)
 
-def build_payload(uploaded_file):
+def enhance_document(img_input):
+    img = img_input.convert("RGB")
+    img = ImageEnhance.Contrast(img).enhance(1.45)
+    img = ImageEnhance.Sharpness(img).enhance(1.35)
+    return img
+
+def build_part(uploaded_file):
     if uploaded_file.type == "application/pdf":
-        return {"mime_type": "application/pdf", "data": uploaded_file.getvalue()}
+        return types.Part.from_bytes(data=uploaded_file.getvalue(), mime_type="application/pdf")
     else:
-        return Image.open(uploaded_file)
+        pil_img = Image.open(uploaded_file)
+        enhanced = enhance_document(pil_img)
+        buffer = io.BytesIO()
+        enhanced.save(buffer, format="JPEG", quality=95)
+        return types.Part.from_bytes(data=buffer.getvalue(), mime_type="image/jpeg")
 
-def call_gemini_with_retry(payload_list, max_retries=3):
-    for attempt in range(max_retries):
+AUDIT_SCHEMA = {
+    "type": "OBJECT",
+    "properties": {
+        "written_grand_total": {
+            "type": "NUMBER",
+            "description": "The net or grand total written at the bottom of the parchi/page, if present. Else 0."
+        },
+        "records": {
+            "type": "ARRAY",
+            "items": {
+                "type": "OBJECT",
+                "properties": {
+                    "s_no": {"type": "STRING"},
+                    "date": {"type": "STRING"},
+                    "party_name": {"type": "STRING"},
+                    "crop_item": {"type": "STRING"},
+                    "bags": {"type": "STRING"},
+                    "weight": {"type": "NUMBER"},
+                    "rate": {"type": "NUMBER"},
+                    "reported_amount": {"type": "NUMBER"},
+                    "faded_or_unclear": {"type": "BOOLEAN"},
+                    "doubt_details": {"type": "STRING"}
+                },
+                "required": ["party_name", "weight", "rate", "reported_amount", "faded_or_unclear"]
+            }
+        }
+    },
+    "required": ["records"]
+}
+
+def run_forensic_dual_pass(file_part):
+    system_instruction = """
+    You are a forensic auditor inspecting Indian Mandi receipts, kachhi parchi, and commercial registers.
+    Extract every line item and the written grand total at the bottom exactly as written on paper.
+    DO NOT autocorrect human math errors on paper; report what is actually written so our deterministic Python engine can catch mistakes.
+    If handwriting is cut or faded, mark faded_or_unclear=True.
+    """
+    models = ["gemini-2.5-flash", "gemini-2.5-flash-lite"]
+    last_err = None
+
+    for m in models:
         try:
-            response = model.generate_content(payload_list)
-            return response.text
+            res1 = client.models.generate_content(
+                model=m,
+                contents=[system_instruction, file_part],
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=AUDIT_SCHEMA,
+                    temperature=0.1
+                )
+            )
+            data1 = json.loads(res1.text)
+
+            res2 = client.models.generate_content(
+                model=m,
+                contents=["Re-verify all written numbers and totals to eliminate hallucination:", file_part],
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=AUDIT_SCHEMA,
+                    temperature=0.2
+                )
+            )
+            data2 = json.loads(res2.text)
+            return data1, data2
         except Exception as e:
-            error_str = str(e)
-            if "429" in error_str or "ResourceExhausted" in error_str:
-                if attempt < max_retries - 1:
-                    wait_time = (attempt + 1) * 8
-                    st.warning(f"API busy. Retrying in {wait_time}s... (Attempt {attempt+1}/{max_retries})")
-                    time.sleep(wait_time)
-                else:
-                    raise Exception("API quota limit reached. Kripya 1 minute ruk kar dobara try karein.")
+            last_err = e
+            continue
+
+    raise Exception(f"Extraction Pipeline Failure: {last_err}")
+
+app_mode = st.sidebar.radio("Functionality:", ["Zero-Error Ledger & Math Audit", "2-Document Forensic Matcher"])
+
+# ----------------- MODE 1: Ledger & Math Audit -----------------
+if app_mode == "Zero-Error Ledger & Math Audit":
+    up_file = st.sidebar.file_uploader("Document upload karein (Image/PDF)", type=["jpg", "jpeg", "png", "pdf"])
+
+    if up_file:
+        col_prev, col_stat = st.columns([1, 2])
+        with col_prev:
+            if up_file.type != "application/pdf":
+                st.image(Image.open(up_file), caption="Source Parchi", use_container_width=True)
             else:
-                raise e
+                st.info(f"📄 PDF Loaded: {up_file.name}")
 
-app_mode = st.sidebar.radio("Mode Select Karein:", ["Single Document OCR", "2 Documents Cross-Check & Audit"])
-
-# ----------------- MODE 1: Single Document OCR -----------------
-if app_mode == "Single Document OCR":
-    uploaded_file = st.sidebar.file_uploader("Photo ya PDF upload karein", type=["jpg", "jpeg", "png", "pdf"])
-    
-    if uploaded_file:
-        if uploaded_file.type != "application/pdf":
-            st.image(Image.open(uploaded_file), caption="Uploaded File")
-        else:
-            st.info(f"📄 Uploaded PDF: {uploaded_file.name}")
-
-        if st.button("Extract Data with Zero-Assumption Audit"):
-            with st.spinner("Handwriting & Calculations strictly audit ho rahi hain..."):
-                prompt = """
-                You are a senior forensic accountant auditing Indian Mandi receipts, kachhi parchi, bahi-khata, handwritten ledgers, and trade challans.
-                Extract every transaction and ledger record into a structured Markdown table with 100% precision.
-
-                CRITICAL FINANCIAL & NUMERICAL RULES:
-                1. ZERO-ASSUMPTION POLICY: Never guess, approximate, extrapolate, or auto-complete any number, date, rate, bag count, weight, or name.
-                2. DOUBT / AMBIGUITY TRIGGER:
-                   - If any digit (e.g., distinguishing 0 vs 6, 1 vs 7, 3 vs 8), decimal point, or name is cut, faded, overwritten, smudged, or ambiguous by even 0.01%, DO NOT write a clean number.
-                   - You MUST wrap that exact cell value inside this red highlight format:
-                     `<span style='background-color: #ffcccc; color: #b30000; font-weight: bold; padding: 2px 5px; border-radius: 3px;'>🔴 [DOUBT: best_guess_or_unreadable]</span>`
-                3. ARITHMETIC VERIFICATION:
-                   - Always verify if: Quantity/Weight × Rate = Net Amount.
-                   - If the handwritten net amount on the paper does NOT match the mathematical calculation, keep the written amount but append:
-                     `<span style='background-color: #ffcccc; color: #b30000; font-weight: bold; padding: 2px 5px; border-radius: 3px;'>🔴 [CALC MISMATCH: written_val]</span>`
-                4. CLEAN ENTRIES ONLY:
-                   - Only enter numbers normally when they are 100% sharp, distinct, and legible.
-
-                TABLE FORMAT:
-                Return ONLY the structured Markdown Table with standard relevant columns:
-                | S.No | Date | Name / Party Details | Item / Crop | Bags / Qty | Weight (Qntl/Kg) | Rate | Net Amount |
-
-                Followed immediately by:
-                ### 🔴 Flagged Items for Manual Verification
-                - List every flagged row number, the field in doubt, and why it requires human inspection.
-                """
-
+        if st.button("🚀 Run Forensic Math Cross-Audit"):
+            with st.spinner("Handwriting extraction + Strict Mathematical Recalculation chal raha hai..."):
                 try:
-                    res_text = call_gemini_with_retry([prompt, build_payload(uploaded_file)])
-                    st.markdown(res_text, unsafe_allow_html=True)
+                    payload = build_part(up_file)
+                    p1_obj, p2_obj = run_forensic_dual_pass(payload)
 
-                    # Extract table lines
-                    lines = [line.strip() for line in res_text.strip().split("\n") if line.startswith("|") and line.endswith("|")]
-                    if len(lines) > 2:
-                        raw_data = [[c.strip() for c in line.split("|")[1:-1]] for line in lines]
-                        headers = raw_data[0]
-                        rows = raw_data[2:]
+                    df = pd.DataFrame(p1_obj.get("records", []))
+                    p2_records = p2_obj.get("records", [])
+                    written_grand_total = float(p1_obj.get("written_grand_total", 0) or 0)
 
-                        # Remove HTML tags for clean Excel viewing while keeping the 🔴 text
-                        clean_rows = []
-                        for row in rows:
-                            clean_row = []
-                            for cell in row:
-                                clean_cell = re.sub(r'<[^>]*>', '', cell).strip()
-                                clean_row.append(clean_cell)
-                            clean_rows.append(clean_row)
+                    status_list = []
+                    correct_calc_list = []
+                    remarks_list = []
+                    recomputed_running_sum = 0.0
+                    math_errors_count = 0
 
-                        df = pd.DataFrame(clean_rows, columns=headers)
+                    for idx in range(len(df)):
+                        row1 = df.iloc[idx]
+                        w = float(row1.get("weight", 0) or 0)
+                        r = float(row1.get("rate", 0) or 0)
+                        rep_amt = float(row1.get("reported_amount", 0) or 0)
+                        exact_amt = round(w * r, 2)
+                        correct_calc_list.append(exact_amt)
+                        recomputed_running_sum += exact_amt
 
-                        # Write Excel and highlight cells in red
-                        output = io.BytesIO()
-                        with pd.ExcelWriter(output, engine="openpyxl") as writer:
-                            df.to_excel(writer, index=False, sheet_name="Mandi_Record")
-                            ws = writer.sheets["Mandi_Record"]
+                        inconsistent = False
+                        if idx < len(p2_records):
+                            row2 = p2_records[idx]
+                            if abs(w - float(row2.get("weight", 0) or 0)) > 0.001 or abs(r - float(row2.get("rate", 0) or 0)) > 0.001:
+                                inconsistent = True
 
-                            red_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
-                            red_font = Font(color="9C0006", bold=True)
+                        math_mismatch = (rep_amt > 0 and w > 0 and r > 0 and abs(exact_amt - rep_amt) > 1.0)
+                        is_faded = bool(row1.get("faded_or_unclear", False))
 
-                            for row_cells in ws.iter_rows(min_row=2, max_row=len(df)+1, min_col=1, max_col=len(headers)):
-                                for cell in row_cells:
-                                    val = str(cell.value or "")
-                                    if "🔴" in val or "[DOUBT" in val or "MISMATCH" in val:
-                                        cell.fill = red_fill
-                                        cell.font = red_font
+                        if math_mismatch:
+                            math_errors_count += 1
+                            diff = round(rep_amt - exact_amt, 2)
+                            status_list.append("🔴 MATH ERROR ON PAPER")
+                            remarks_list.append(f"Paper par: ₹{rep_amt} | Asli: ₹{exact_amt} (Farq: ₹{diff})")
+                        elif inconsistent:
+                            status_list.append("🔴 READING CONFLICT")
+                            remarks_list.append("Vision ambiguity between Pass 1 and 2.")
+                        elif is_faded:
+                            status_list.append("🟠 UNCLEAR INK")
+                            remarks_list.append(str(row1.get("doubt_details", "Faded handwriting")))
+                        else:
+                            status_list.append("✅ 100% CORRECT")
+                            remarks_list.append("Exact Match")
 
-                        st.download_button(
-                            label="📥 Download Excel Sheet with Red Highlighting (.xlsx)",
-                            data=output.getvalue(),
-                            file_name="verified_mandi_data.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                        )
-                except Exception as ex:
-                    st.error(f"Processing Error: {ex}")
+                    df["CORRECT_CALCULATED_AMOUNT"] = correct_calc_list
+                    df["AUDIT_STATUS"] = status_list
+                    df["AUDIT_REMARKS"] = remarks_list
 
-# ----------------- MODE 2: 2 Documents Deep Cross-Check -----------------
-else:
-    st.subheader("🔍 Deep Cross-Verification (0.0001% Highlighted Difference Audit)")
-    col1, col2 = st.columns(2)
+                    st.divider()
+                    if written_grand_total > 0:
+                        total_diff = round(written_grand_total - recomputed_running_sum, 2)
+                        if abs(total_diff) > 1.0:
+                            st.error(
+                                f"🚨 **Parchi ka Grand Total Galat Hai!**\n\n"
+                                f"- **Paper par likha jod:** ₹{written_grand_total:,.2f}\n"
+                                f"- **Sahi hisaab jod:** ₹{recomputed_running_sum:,.2f}\n"
+                                f"- **Farq (Discrepancy):** ₹{total_diff:,.2f}"
+                            )
+                        else:
+                            st.success(f"✅ **Grand Total Verified:** ₹{written_grand_total:,.2f} 100% match hai!")
+                    else:
+                        st.info(f"📊 **Calculated Grand Total:** ₹{recomputed_running_sum:,.2f}")
 
-    with col1:
-        doc1 = st.file_uploader("First Document (Image/PDF)", type=["jpg", "jpeg", "png", "pdf"], key="doc1")
-        if doc1 and doc1.type != "application/pdf":
-            st.image(Image.open(doc1), caption="Document 1")
-        elif doc1:
-            st.info(f"📄 Doc 1: {doc1.name}")
+                    if math_errors_count > 0:
+                        st.warning(f"⚠️ **{math_errors_count} entries me multiplication/rate calculation ki galti mili hai!**")
 
-    with col2:
-        doc2 = st.file_uploader("Second Document (Image/PDF)", type=["jpg", "jpeg", "png", "pdf"], key="doc2")
-        if doc2 and doc2.type != "application/pdf":
-            st.image(Image.open(doc2), caption="Document 2")
-        elif doc2:
-            st.info(f"📄 Doc 2: {doc2.name}")
+                    st.subheader("Audited Ledger Grid (Live Editable)")
+                    edited_df = st.data_editor(df, use_container_width=True)
 
-    if doc1 and doc2:
-        if st.button("Compare & Highlight Differences"):
-            with st.spinner("Dono documents ka micro-level audit chal raha hai..."):
-                audit_prompt = """
-                Compare Document 1 and Document 2 down to the smallest granular detail (0.0001% level).
-                Highlight ANY mismatch or difference between both files using:
-                `<span style='background-color: #ff4b4b; color: white; padding: 2px 5px; border-radius: 3px;'>🔴 VALUE (MISMATCH)</span>`.
-                
-                Highlight any unclear or faded number using:
-                `<span style='background-color: #ff9800; color: white; padding: 2px 5px; border-radius: 3px;'>🟠 VALUE [UNCLEAR]</span>`.
+                    output = io.BytesIO()
+                    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+                        edited_df.to_excel(writer, index=False, sheet_name="Mandi_Verified_Ledger")
+                        ws = writer.sheets["Mandi_Verified_Ledger"]
 
-                Provide:
-                1. Final Verdict: MATCH or CRITICAL MISMATCH DETECTED
-                2. Discrepancy Markdown Table
-                3. Total Weight & Total Amount Reconciliation
-                """
-                try:
-                    res_text = call_gemini_with_retry([
-                        audit_prompt,
-                        "Doc 1:", build_payload(doc1),
-                        "Doc 2:", build_payload(doc2)
-                    ])
-                    st.markdown(res_text, unsafe_allow_html=True)
+                        red_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+                        red_font = Font(color="9C0006", bold=True)
+                        green_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+                        green_font = Font(color="006100", bold=True)
+
+                        status_col_idx = edited_df.columns.get_loc("AUDIT_STATUS") + 1
+
+                        for r_idx in range(2, len(edited_df) + 2):
+                            cell_val = str(ws.cell(row=r_idx, column=status_col_idx).value)
+                            if "🔴" in cell_val:
+                                for c_idx in range(1, len(edited_df.columns) + 1):
+                                    ws.cell(row=r_idx, column=c_idx).fill = red_fill
+                                    ws.cell(row=r_idx, column=c_idx).font = red_font
+                            elif "✅" in cell_val:
+                                ws.cell(row=r_idx, column=status_col_idx).fill = green_fill
+                                ws.cell(row=r_idx, column=status_col_idx).font = green_font
+
+                    st.download_button(
+                        label="📥 Download Mathematical Audit Excel (.xlsx)",
+                        data=output.getvalue(),
+                        file_name="mandi_math_audited.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+
                 except Exception as ex:
                     st.error(f"Audit Error: {ex}")
-                    
+
+# ----------------- MODE 2: 2-Document Matcher -----------------
+else:
+    st.subheader("🔍 Forensic 2-Document Difference Reconciliation (0.0001% Variance)")
+    c1, c2 = st.columns(2)
+    with c1:
+        d1 = st.file_uploader("Document 1 (Ledger/Parchi)", type=["jpg", "jpeg", "png", "pdf"], key="d1_forensic")
+    with c2:
+        d2 = st.file_uploader("Document 2 (Bill/Challan)", type=["jpg", "jpeg", "png", "pdf"], key="d2_forensic")
+
+    if d1 and d2 and st.button("Execute Cross-Audit"):
+        with st.spinner("Analyzing micro-deviations between both documents..."):
+            prompt = """
+            Compare Document 1 and Document 2 strictly down to 0.0001% variance.
+            Highlight ANY mismatch between files using:
+            `<span style='background-color: #ff4b4b; color: white; padding: 2px 5px; border-radius: 3px;'>🔴 VALUE (MISMATCH)</span>`.
+            Provide:
+            1. Status: 100% MATCH or CRITICAL DISCREPANCIES DETECTED
+            2. Detailed Markdown Comparison Table
+            3. Quantity & Financial Reconciliation Summary
+            """
+            try:
+                res = client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=[prompt, "Doc 1:", build_part(d1), "Doc 2:", build_part(d2)]
+                )
+                st.markdown(res.text, unsafe_allow_html=True)
+            except Exception as e:
+                st.error(f"Audit match error: {e}")
