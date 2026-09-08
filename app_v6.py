@@ -12,8 +12,8 @@ from datetime import datetime
 import pypdfium2 as pdfium
 from openpyxl.styles import PatternFill, Font
 
-st.set_page_config(page_title="Mandi AI - Genie Voice Munim", layout="wide")
-st.title("🌾 Mandi AI: Genie (भारतीय मुनीम) & Autonomous Document Vault")
+st.set_page_config(page_title="Mandi AI: जिनी मुनीम", layout="wide")
+st.title("🌾 Mandi AI: जिनी (भारतीय मुनीम) & Master Vault")
 
 api_key = st.secrets.get("GEMINI_API_KEY")
 if not api_key:
@@ -24,7 +24,7 @@ client = genai.Client(api_key=api_key)
 
 ACTIVE_MODELS = ["gemini-3.6-flash", "gemini-3.5-flash-lite"]
 
-def generate_with_fallback(contents, config=None):
+def run_ai(contents, config=None):
     last_err = None
     for m in ACTIVE_MODELS:
         try:
@@ -34,419 +34,318 @@ def generate_with_fallback(contents, config=None):
         except Exception as e:
             last_err = e
             continue
-    raise Exception(f"AI Service Unavailable: {last_err}")
+    raise Exception(f"AI Service Error: {last_err}")
 
-# ----------------- PHYSICAL FILE STORAGE & VAULT DIRECTORY -----------------
+# Storage Directories
 STORAGE_DIR = "vault_files"
 INDEX_FILE = "vault_index.json"
+for folder in ["Truck_Logistics", "Mandi_Parchi", "Invoices_Bills"]:
+    os.makedirs(os.path.join(STORAGE_DIR, folder), exist_ok=True)
 
-os.makedirs(os.path.join(STORAGE_DIR, "Truck_Logistics"), exist_ok=True)
-os.makedirs(os.path.join(STORAGE_DIR, "Mandi_Parchi"), exist_ok=True)
-os.makedirs(os.path.join(STORAGE_DIR, "Invoices_Bills"), exist_ok=True)
-os.makedirs(os.path.join(STORAGE_DIR, "General_Docs"), exist_ok=True)
-
-def load_vault_index():
+def load_vault():
     if os.path.exists(INDEX_FILE):
         try:
             with open(INDEX_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
             pass
-    return {
-        "business_knowledge": [],
-        "documents": []
-    }
+    return {"rules": [], "documents": []}
 
-def save_vault_index(data):
+def save_vault(d):
     with open(INDEX_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+        json.dump(d, f, ensure_ascii=False, indent=2)
 
-vault = load_vault_index()
+vault = load_vault()
 
-def load_source_image(file_obj):
+def load_img(file_obj):
     if file_obj.type == "application/pdf":
-        pdf = pdfium.PdfDocument(file_obj.getvalue())
-        page = pdf[0]
-        return page.render(scale=2).to_pil()
-    else:
-        return Image.open(file_obj).convert("RGB")
+        return pdfium.PdfDocument(file_obj.getvalue())[0].render(scale=2).to_pil()
+    return Image.open(file_obj).convert("RGB")
 
-def build_part_from_pil(pil_img):
-    enhanced = ImageEnhance.Contrast(pil_img).enhance(1.45)
-    enhanced = ImageEnhance.Sharpness(enhanced).enhance(1.35)
+def build_part(pil_img):
+    img = ImageEnhance.Contrast(pil_img).enhance(1.4)
+    img = ImageEnhance.Sharpness(img).enhance(1.3)
     buf = io.BytesIO()
-    enhanced.save(buf, format="JPEG", quality=95)
+    img.save(buf, format="JPEG", quality=90)
     return types.Part.from_bytes(data=buf.getvalue(), mime_type="image/jpeg")
 
-# Sidebar: Brain SOP & Navigation
+# Sidebar
 with st.sidebar:
-    st.header("🧠 Permanent Memory & Rules")
-    new_sop = st.text_area("Business SOP / Rule sikhayein:")
-    if st.button("💾 Brain me Lock Karein"):
-        if new_sop.strip():
-            vault["business_knowledge"].append({
-                "rule": new_sop.strip(),
-                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M")
-            })
-            save_vault_index(vault)
-            st.success("Rule permanently save ho gaya!")
-
-    if vault["business_knowledge"]:
-        st.subheader("Saved Business Rules:")
-        for idx, r in enumerate(vault["business_knowledge"][-3:], start=1):
-            st.caption(f"{idx}. {r.get('rule')}")
-
+    st.header("🧠 मुनीम की याददाश्त (Memory)")
+    new_r = st.text_area("व्यापार का नया नियम सिखाएं:")
+    if st.button("💾 नियम सेव करें"):
+        if new_r.strip():
+            vault["rules"].append(new_r.strip())
+            save_vault(vault)
+            st.success("नियम हमेशा के लिए सेव हो गया!")
+    if vault.get("rules"):
+        for i, r in enumerate(vault["rules"][-3:], 1):
+            st.caption(f"{i}. {r}")
     st.divider()
-    app_mode = st.radio("Navigation:", [
-        "Hands-Free Genie Voice Assistant",
-        "Upload, OCR & Auto-Filing Vault",
-        "Explain Math (Doubt Solver)",
-        "2-Document Forensic Matcher"
+    mode = st.radio("Navigation:", [
+        "👩‍💼 जिनी से बातचीत (Voice Munim)",
+        "📤 पर्ची/बिल अपलोड और ऑटो-फाइलिंग",
+        "🧮 हिसाब समझें (Doubt Solver)",
+        "🔍 दो पर्चियों का मिलान (Forensic Match)"
     ])
 
-# ----------------- MODULE 1: Hands-Free Genie Wake-Word Assistant -----------------
-if app_mode == "Hands-Free Genie Voice Assistant":
-    st.subheader("👩‍💼 जिनी (Genie): आपकी अपनी भारतीय डिजिटल मुनीम")
-    st.caption("बोलिए **'हे जिनी' (Hey Genie)** या नीचे माइक दबाकर सीधे बात कीजिए। जिनी शुद्ध भारतीय नारी की आवाज़ में तुरंत उत्तर देगी।")
+# MODULE 1: GENIE LIVE ASSISTANT
+if mode == "👩‍💼 जिनी से बातचीत (Voice Munim)":
+    st.subheader("👩‍💼 जिनी: आपकी अपनी भारतीय डिजिटल मुनीम")
+    st.caption("माइक का बटन दबाकर बोलिए या टाइप कीजिए। जिनी भारतीय स्त्री की आवाज़ में उत्तर देंगी।")
 
-    # Fixed Web Speech Recognition + Hindi Female TTS Engine
-    handsfree_html = """
-    <div style="background: linear-gradient(135deg, #1e293b, #0f172a); padding: 16px; border-radius: 12px; border: 1px solid #38bdf8; margin-bottom: 15px;">
-        <div style="display: flex; align-items: center; justify-content: space-between;">
-            <div style="display: flex; align-items: center; gap: 10px;">
-                <span id="genieIndicator" style="display: inline-block; width: 14px; height: 14px; border-radius: 50%; background-color: #22c55e; box-shadow: 0 0 8px #22c55e;"></span>
-                <strong id="genieStatus" style="color: #f8fafc; font-size: 15px;">जिनी सुन रही हैं... (बोलिए: 'हे जिनी')</strong>
-            </div>
-            <button onclick="startListeningManually()" style="background: #e11d48; color: white; border: none; padding: 8px 16px; border-radius: 8px; font-weight: bold; cursor: pointer;">
-                🎙️ माइक दबाकर बोलें
-            </button>
+    speech_ui = """
+    <div style="background: #0f172a; padding: 14px; border-radius: 10px; border: 1px solid #38bdf8; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between;">
+        <div>
+            <span id="dot" style="display:inline-block; width:12px; height:12px; border-radius:50%; background:#22c55e;"></span>
+            <strong id="stTxt" style="color:#f8fafc; margin-left:8px; font-size:14px;">जिनी तैयार हैं...</strong>
         </div>
-        <div id="heardText" style="color: #94a3b8; font-size: 13px; margin-top: 8px; font-style: italic;">
-            आप जो बोलेंगे वो यहाँ दिखेगा और सीधे जिनी तक पहुंचेगा...
-        </div>
+        <button onclick="startMic()" style="background:#e11d48; color:white; border:none; padding:8px 16px; border-radius:6px; font-weight:bold; cursor:pointer;">
+            🎙️ बोलकर पूछें
+        </button>
     </div>
-
     <script>
-    var continuousRec;
-    var isAwake = false;
-
-    // Speak function with Indian Female Tone Priority
-    function speakHindiFemale(text) {
-        if (!('speechSynthesis' in window)) return;
-        window.speechSynthesis.cancel();
-        var utter = new SpeechSynthesisUtterance(text);
-        utter.lang = 'hi-IN';
-        utter.rate = 0.93;
-        utter.pitch = 1.15; // Pleasant feminine pitch
-
-        var voices = window.speechSynthesis.getVoices();
-        var selectedVoice = null;
-
-        // Try to pick authentic Indian female voice
-        for (var i = 0; i < voices.length; i++) {
-            var v = voices[i];
-            if (v.lang.includes('hi') || v.lang.includes('IN')) {
-                var name = v.name.toLowerCase();
-                if (name.includes('female') || name.includes('lekha') || name.includes('swara') || name.includes('kalpana') || name.includes('google')) {
-                    selectedVoice = v;
-                    break;
-                }
-                if (!selectedVoice) selectedVoice = v;
-            }
-        }
-        if (selectedVoice) utter.voice = selectedVoice;
-        window.speechSynthesis.speak(utter);
-    }
-
-    function triggerStreamlitSubmission(text) {
-        var parentDoc = window.parent.document;
-        // Accurate Streamlit chat input selector
-        var ta = parentDoc.querySelector('textarea[data-testid="stChatInputTextArea"]');
-        var btn = parentDoc.querySelector('button[data-testid="stChatInputSubmitButton"]');
-
-        if (ta) {
-            var nativeSetter = Object.getOwnPropertyDescriptor(window.parent.HTMLTextAreaElement.prototype, "value").set;
-            nativeSetter.call(ta, text);
-            ta.dispatchEvent(new Event('input', { bubbles: true }));
-            ta.dispatchEvent(new Event('change', { bubbles: true }));
-
-            setTimeout(function() {
-                if (btn) {
-                    btn.click();
-                } else {
-                    ta.dispatchEvent(new KeyboardEvent('keydown', {'key': 'Enter', 'keyCode': 13, 'which': 13, 'bubbles': true}));
-                }
-            }, 300);
-        } else {
-            console.log("Chat textarea not found");
-        }
-    }
-
-    function initGenie() {
+    var rec;
+    function startMic() {
         if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-            document.getElementById('genieStatus').innerText = "माइक्रोफ़ोन ब्राउज़र में सपोर्टेड नहीं है।";
-            return;
+            alert('Browser voice support nahi karta'); return;
         }
-
-        var SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-        continuousRec = new SpeechRec();
-        continuousRec.continuous = true;
-        continuousRec.interimResults = true;
-        continuousRec.lang = 'hi-IN';
-
-        continuousRec.onstart = function() {
-            document.getElementById('genieIndicator').style.backgroundColor = "#22c55e";
-            document.getElementById('genieStatus').innerText = "जिनी सुन रही हैं... (बोलिए: 'हे जिनी')";
+        var SRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+        rec = new SRec();
+        rec.lang = 'hi-IN';
+        rec.onstart = function() {
+            document.getElementById('dot').style.background = '#e11d48';
+            document.getElementById('stTxt').innerText = 'सुन रही हूँ, बोलिए...';
         };
-
-        continuousRec.onerror = function(e) {
-            try { continuousRec.start(); } catch(err) {}
-        };
-
-        continuousRec.onend = function() {
-            try { continuousRec.start(); } catch(err) {}
-        };
-
-        continuousRec.onresult = function(event) {
-            for (var i = event.resultIndex; i < event.results.length; ++i) {
-                var transcript = event.results[i][0].transcript.toLowerCase().trim();
-                document.getElementById('heardText').innerText = "सुना: " + transcript;
-
-                // Wake word trigger
-                if (!isAwake && (transcript.includes("genie") || transcript.includes("जिनी") || transcript.includes("gini") || transcript.includes("hey genie") || transcript.includes("he genie"))) {
-                    isAwake = true;
-                    document.getElementById('genieIndicator').style.backgroundColor = "#e11d48";
-                    document.getElementById('genieStatus').innerText = "🔴 जिनी सक्रिय हैं! अपना प्रश्न बोलिए...";
-                    speakHindiFemale("नमस्ते भैया, बताइए क्या हिसाब देखना है? मैं सुन रही हूँ।");
-                    return;
-                }
-
-                // If wake or final query recognized
-                if (event.results[i].isFinal) {
-                    var cleaned = transcript.replace(/hey genie|he genie|genie|जिनी/gi, "").trim();
-                    if (cleaned.length > 2) {
-                        isAwake = false;
-                        document.getElementById('genieIndicator').style.backgroundColor = "#22c55e";
-                        document.getElementById('genieStatus').innerText = "प्रश्न भेजा जा रहा है: '" + cleaned + "'";
-                        triggerStreamlitSubmission(cleaned);
-                    }
-                }
+        rec.onresult = function(e) {
+            var txt = e.results[0][0].transcript;
+            document.getElementById('stTxt').innerText = 'सुना: ' + txt;
+            document.getElementById('dot').style.background = '#22c55e';
+            var ta = window.parent.document.querySelector('textarea[data-testid="stChatInputTextArea"]');
+            var btn = window.parent.document.querySelector('button[data-testid="stChatInputSubmitButton"]');
+            if (ta) {
+                var setVal = Object.getOwnPropertyDescriptor(window.parent.HTMLTextAreaElement.prototype, "value").set;
+                setVal.call(ta, txt);
+                ta.dispatchEvent(new Event('input', { bubbles: true }));
+                setTimeout(function(){ if(btn) btn.click(); }, 300);
             }
         };
-
-        try { continuousRec.start(); } catch(e) {}
+        rec.onerror = function() { document.getElementById('dot').style.background = '#22c55e'; };
+        rec.start();
     }
-
-    function startListeningManually() {
-        if (continuousRec) {
-            try { continuousRec.stop(); } catch(e) {}
-        }
-        isAwake = true;
-        document.getElementById('genieIndicator').style.backgroundColor = "#e11d48";
-        document.getElementById('genieStatus').innerText = "🔴 बोलिए, जिनी ध्यान से सुन रही हैं...";
-        initGenie();
-    }
-
-    window.onload = initGenie;
-    initGenie();
     </script>
     """
-    components.html(handsfree_html, height=105)
+    components.html(speech_ui, height=65)
 
     if "chat_history" not in st.session_state:
         st.session_state["chat_history"] = [
-            {"role": "assistant", "content": "नमस्ते भैया! मैं जिनी हूँ, आपकी अपनी मुनीम बहन। मंडी का कोई भी हिसाब हो, पर्ची मिलानी हो या गाड़ी का चालान देखना हो—आप बस बोलकर बताइए, मैं सब समझा दूँगी।"}
+            {"role": "assistant", "content": "नमस्ते भैया! मैं जिनी हूँ। आज मंडी का कौन सा हिसाब या गाड़ी का बिल देखना है? बताइए, मैं सब समझाती हूँ।"}
         ]
 
-    for msg in st.session_state["chat_history"]:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
+    for m in st.session_state["chat_history"]:
+        with st.chat_message(m["role"]):
+            st.markdown(m["content"])
 
-    user_query = st.chat_input("जिनी से कुछ भी पूछें...")
-
-    if user_query:
-        st.session_state["chat_history"].append({"role": "user", "content": user_query})
+    q = st.chat_input("जिनी से कुछ भी पूछें...")
+    if q:
+        st.session_state["chat_history"].append({"role": "user", "content": q})
         with st.chat_message("user"):
-            st.markdown(user_query)
+            st.markdown(q)
 
-        vault_summary = []
-        for doc in vault.get("documents", []):
-            vault_summary.append({
-                "doc_id": doc.get("doc_id"),
-                "filename": doc.get("filename"),
-                "category": doc.get("category"),
-                "date": doc.get("date"),
-                "truck_no": doc.get("truck_no"),
-                "parties": doc.get("parties"),
-                "summary": doc.get("summary"),
-                "records": doc.get("records")
-            })
-
-        persistent_rules_text = "\n".join([r.get("rule", "") for r in vault.get("business_knowledge", [])])
-
-        genie_prompt = f"""
-        आप 'जिनी' (Genie) हैं—एक समझदार, आदरणीय, शुद्ध और मधुर हिंदी बोलने वाली भारतीय मुनीम।
-        आप उपयोगकर्ता (भैया / मालिक) से एक निष्ठावान, होशियार भारतीय बहन/मुनीम की तरह बात करती हैं।
-
-        [भाषा और लहजे के अनिवार्य नियम]:
-        1. हमेशा शुद्ध, स्पष्ट, सम्मानजनक हिंदी बोलें (जैसे: "नमस्ते भैया", "जी, मैं अभी हिसाब देखकर बताती हूँ", "आप बिल्कुल चिंता मत कीजिए")।
-        2. आपका लिंग STRICTLY FEMININE (स्त्रीलिंग) रहेगा:
-           - "मैं देख रही हूँ", "मैं बताती हूँ", "मैंने हिसाब मिला लिया है" (कभी भी 'रहा हूँ' या 'करता हूँ' मत बोलना)।
-        3. उत्तर हमेशा सीधा, स्पष्ट और सटीक रखें।
-        4. जब भी मंडी के बही-खाते, गाड़ी या किसान के बारे में पूछा जाए, तो नीचे दिए गए सुरक्षित डेटा से बिल्कुल सही आंकड़े निकाल कर दें।
-
-        [दुकान / व्यापार के नियम]:
-        {persistent_rules_text}
-
-        [पुराना सुरक्षित रिकॉर्ड और दस्तावेज़]:
-        {json.dumps(vault_summary, ensure_ascii=False)}
-
-        [यूज़र का सवाल]: "{user_query}"
+        docs_summary = json.dumps(vault.get("documents", []), ensure_ascii=False)
+        rules_text = "\n".join(vault.get("rules", []))
+        prompt = f"""
+        आप 'जिनी' (Genie) हैं—एक होशियार, आदरणीय और मधुर भारतीय मुनीम बहन।
+        भाषा: शुद्ध, आदरणीय हिंदी (स्त्रीलिंग: "मैं बताती हूँ", "मैंने हिसाब देख लिया है")।
+        [व्यापार के नियम]: {rules_text}
+        [पुराने दस्तावेज़ और बही-खाता]: {docs_summary}
+        [यूज़र का सवाल]: "{q}"
+        सीधा और सटीक उत्तर दें। अगर कोई फाइल मिली तो उसका नाम भी बताएं।
         """
-
         with st.chat_message("assistant"):
             with st.spinner("जिनी हिसाब देख रही हैं..."):
                 try:
-                    res = generate_with_fallback([genie_prompt])
-                    ans_text = res.text.strip()
-                    st.markdown(ans_text)
-                    st.session_state["chat_history"].append({"role": "assistant", "content": ans_text})
+                    res = run_ai([prompt])
+                    ans = res.text.strip()
+                    st.markdown(ans)
+                    st.session_state["chat_history"].append({"role": "assistant", "content": ans})
 
-                    # Show matched documents
-                    matched_docs = [d for d in vault.get("documents", []) if d.get("doc_id") in ans_text or d.get("filename") in ans_text]
-                    if matched_docs:
-                        st.divider()
-                        st.subheader("📂 दस्तावेज़ की प्रति (Document Preview)")
-                        for m_doc in matched_docs:
-                            p_path = m_doc.get("stored_path")
-                            if p_path and os.path.exists(p_path):
-                                if p_path.lower().endswith(".pdf"):
-                                    pdf_rend = pdfium.PdfDocument(p_path)[0].render(scale=2).to_pil()
-                                    st.image(pdf_rend, caption=m_doc.get('filename'), width=500)
-                                else:
-                                    st.image(Image.open(p_path), caption=m_doc.get('filename'), width=500)
+                    # Show matched physical image/PDF
+                    matched = [d for d in vault.get("documents", []) if d.get("filename") in ans or d.get("doc_id") in ans]
+                    for m_doc in matched:
+                        p = m_doc.get("stored_path")
+                        if p and os.path.exists(p):
+                            st.write(f"📂 **दस्तावेज़:** `{m_doc.get('filename')}`")
+                            if p.lower().endswith(".pdf"):
+                                st.image(pdfium.PdfDocument(p)[0].render(scale=2).to_pil(), width=450)
+                            else:
+                                st.image(Image.open(p), width=450)
 
-                    # Indian Female Voice Output
-                    clean_voice = ans_text.replace('"', '\\"').replace('\n', ' ')
+                    # Authentic Indian Female TTS
+                    clean_v = ans.replace('"', '\\"').replace('\n', ' ')
                     components.html(f"""
                     <script>
                         var synth = window.speechSynthesis;
                         synth.cancel();
-                        var utter = new SpeechSynthesisUtterance("{clean_voice}");
-                        utter.lang = 'hi-IN';
-                        utter.rate = 0.93;
-                        utter.pitch = 1.15;
-
-                        var voices = synth.getVoices();
-                        for (var i = 0; i < voices.length; i++) {{
-                            var v = voices[i];
-                            if (v.lang.includes('hi') || v.lang.includes('IN')) {{
-                                var n = v.name.toLowerCase();
+                        var u = new SpeechSynthesisUtterance("{clean_v}");
+                        u.lang = 'hi-IN'; u.pitch = 1.15; u.rate = 0.95;
+                        var vs = synth.getVoices();
+                        for (var i=0; i<vs.length; i++) {{
+                            if (vs[i].lang.includes('hi') || vs[i].lang.includes('IN')) {{
+                                var n = vs[i].name.toLowerCase();
                                 if (n.includes('female') || n.includes('lekha') || n.includes('swara') || n.includes('google')) {{
-                                    utter.voice = v;
-                                    break;
+                                    u.voice = vs[i]; break;
                                 }}
                             }}
                         }}
-                        synth.speak(utter);
+                        synth.speak(u);
                     </script>
                     """, height=0)
-
                 except Exception as ex:
-                    st.error(f"Genie error: {ex}")
+                    st.error(f"Error: {ex}")
 
-# ----------------- MODULE 2: Full Ledger OCR & Auto-Filing -----------------
-elif app_mode == "Upload, OCR & Auto-Filing Vault":
-    st.subheader("📤 Upload Document (Auto-Filing & Forensic Math Verification)")
-    up_file = st.file_uploader("Document upload karein (Parchi / Bill / Challan)", type=["jpg", "jpeg", "png", "pdf"])
-
-    if up_file:
-        source_image = load_source_image(up_file)
-
-        if st.button("🚀 Process, Verify & Auto-Save into Vault"):
-            with st.spinner("AI extraction, bounding box detection aur autonomous filing chal raha hai..."):
-                prompt = """
-                You are a senior forensic accountant for Indian Mandi registers.
-                1. Read every line item, farmer name, weight, rate, and written amount into JSON.
-                2. Extract bounding box coordinates: [ymin, xmin, ymax, xmax] (0 to 1000 scale).
-                3. Classify document into exactly one category: 'Truck_Logistics', 'Mandi_Parchi', or 'Invoices_Bills'.
-                4. Extract truck number, date, and overall document summary.
-
-                JSON Output Format:
+# MODULE 2: FULL OCR & AUTO-FILING
+elif mode == "📤 पर्ची/बिल अपलोड और ऑटो-फाइलिंग":
+    st.subheader("📤 पर्ची या बही-खाता अपलोड करें")
+    up = st.file_uploader("Document upload karein", type=["jpg", "jpeg", "png", "pdf"])
+    if up:
+        src_img = load_img(up)
+        if st.button("🚀 हिसाब निकालें और वॉल्ट में सुरक्षित करें"):
+            with st.spinner("AI हिसाब मिला रहा है..."):
+                p_ocr = """
+                Extract EVERY row from this mandi parchi/bill into JSON.
+                Format:
                 {
-                  "category": "Truck_Logistics" or "Mandi_Parchi" or "Invoices_Bills",
-                  "doc_summary": "Short 1-line summary of what this document is",
+                  "category": "Mandi_Parchi" or "Truck_Logistics" or "Invoices_Bills",
                   "date": "DD/MM/YYYY or null",
-                  "truck_no": "string or null",
-                  "parties_involved": ["list of names"],
+                  "summary": "1 line summary",
                   "records": [
                     {
-                      "s_no": "1",
                       "party_name": "Farmer/Trader Name",
-                      "item": "Makka / Crop",
-                      "weight": 24.50,
-                      "rate": 2200.0,
-                      "written_amount": 53900.0,
+                      "weight": 25.0,
+                      "rate": 2100.0,
+                      "written_amount": 52500.0,
                       "doubt_flag": false,
-                      "doubt_reason": "",
                       "box_2d": [ymin, xmin, ymax, xmax]
                     }
                   ]
                 }
-                Return ONLY valid raw JSON.
+                Return ONLY raw valid JSON.
                 """
                 try:
-                    res = generate_with_fallback(
-                        contents=[prompt, build_part_from_pil(source_image)],
-                        config=types.GenerateContentConfig(
-                            response_mime_type="application/json",
-                            temperature=0.1
-                        )
+                    res = run_ai(
+                        contents=[p_ocr, build_part(src_img)],
+                        config=types.GenerateContentConfig(response_mime_type="application/json", temperature=0.1)
                     )
+                    txt = res.text.strip()
+                    if txt.startswith("```json"): txt = txt[7:]
+                    if txt.endswith("```"): txt = txt[:-3]
+                    p_data = json.loads(txt.strip())
 
-                    clean_text = res.text.strip()
-                    if clean_text.startswith("```json"): clean_text = clean_text[7:]
-                    if clean_text.endswith("```"): clean_text = clean_text[:-3]
+                    recs = p_data.get("records", [])
+                    cat = p_data.get("category", "Mandi_Parchi")
+                    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    f_path = os.path.join(STORAGE_DIR, cat, f"{ts}_{up.name}")
+                    with open(f_path, "wb") as f: f.write(up.getbuffer())
 
-                    parsed = json.loads(clean_text.strip())
-                    records = parsed.get("records", [])
-                    category = parsed.get("category", "Mandi_Parchi")
-
-                    timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    safe_filename = f"{timestamp_str}_{up_file.name}"
-                    save_folder = os.path.join(STORAGE_DIR, category)
-                    os.makedirs(save_folder, exist_ok=True)
-                    physical_path = os.path.join(save_folder, safe_filename)
-
-                    with open(physical_path, "wb") as f:
-                        f.write(up_file.getbuffer())
-
-                    doc_entry = {
-                        "doc_id": f"DOC_{timestamp_str}",
-                        "filename": up_file.name,
-                        "stored_path": physical_path,
-                        "category": category,
-                        "uploaded_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        "date": parsed.get("date"),
-                        "truck_no": parsed.get("truck_no"),
-                        "summary": parsed.get("doc_summary"),
-                        "parties": parsed.get("parties_involved", []),
-                        "records_count": len(records),
-                        "records": records
+                    doc_info = {
+                        "doc_id": f"DOC_{ts}",
+                        "filename": up.name,
+                        "stored_path": f_path,
+                        "category": cat,
+                        "summary": p_data.get("summary"),
+                        "records": recs
                     }
+                    vault["documents"].append(doc_info)
+                    save_vault(vault)
 
-                    vault["documents"].append(doc_entry)
-                    save_vault_index(vault)
+                    st.session_state["ocr_records"] = recs
+                    st.session_state["ocr_img"] = src_img
+                    st.success(f"✅ सुरक्षित रूप से [{cat}] में सेव कर दिया गया!")
+                except Exception as e:
+                    st.error(f"Error: {e}")
 
-                    st.session_state["active_records"] = records
-                    st.session_state["base_image"] = source_image
-                    st.session_state["current_doc"] = doc_entry
+        if "ocr_records" in st.session_state and "ocr_img" in st.session_state:
+            recs = st.session_state["ocr_records"]
+            base = st.session_state["ocr_img"].copy()
+            iw, ih = base.size
+            df = pd.DataFrame(recs)
+            draw = ImageDraw.Draw(base)
 
-                    st.success(f"🎉 Document process ho kar save ho gaya: [{category}] me!")
+            calcs, statuses = [], []
+            for _, r in df.iterrows():
+                try:
+                    w = float(re.sub(r"[^\d.]", "", str(r.get("weight", 0))) or 0)
+                    rt = float(re.sub(r"[^\d.]", "", str(r.get("rate", 0))) or 0)
+                    wa = float(re.sub(r"[^\d.]", "", str(r.get("written_amount", 0))) or 0)
+                    ca = round(w * rt, 2)
+                    calcs.append(ca)
 
-                except Exception as ex:
-                    st.error(f"Processing Error: {ex}")
+                    mismatch = (wa > 0 and ca > 0 and abs(ca - wa) > 1.0)
+                    doubt = bool(r.get("doubt_flag", False))
+                    if mismatch:
+                        statuses.append("🔴 CALC MISMATCH")
+                        col = "#FF0000"
+                    elif doubt:
+                        statuses.append("🔴 DOUBTFUL")
+                        col = "#FFA500"
+                    else:
+                        statuses.append("✅ 100% OK")
+                        col = "#00AA00"
 
-        # Post-Processing
-        if "active_records" in st.session_state and "base_image" in st.session_state:
-            records = st.session_state["active_recor
+                    bx = r.get("box_2d")
+                    if bx and len(bx) == 4:
+                        y1, x1, y2, x2 = bx
+                        draw.rectangle([int((x1/1000.0)*iw), int((y1/1000.0)*ih), int((x2/1000.0)*iw), int((y2/1000.0)*ih)], outline=col, width=3)
+                except Exception:
+                    calcs.append(0); statuses.append("🔴 ERROR")
+
+            df["CALCULATED_AMOUNT"] = calcs
+            df["STATUS"] = statuses
+
+            c1, c2 = st.columns([1, 1])
+            with c1:
+                st.write("**Visual Tag Overlay:**")
+                st.image(base, width="stretch")
+            with c2:
+                st.write("**Audited Grid:**")
+                show_cols = [c for c in df.columns if c != "box_2d"]
+                e_df = st.data_editor(df[show_cols], width="stretch")
+
+                out = io.BytesIO()
+                with pd.ExcelWriter(out, engine="openpyxl") as w:
+                    e_df.to_excel(w, index=False, sheet_name="Mandi")
+                    ws = w.sheets["Mandi"]
+                    r_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+                    g_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+                    sc = e_df.columns.get_loc("STATUS") + 1
+                    for rx in range(2, len(e_df) + 2):
+                        val = str(ws.cell(row=rx, column=sc).value)
+                        if "🔴" in val:
+                            for cx in range(1, len(e_df.columns) + 1): ws.cell(row=rx, column=cx).fill = r_fill
+                        elif "✅" in val:
+                            ws.cell(row=rx, column=sc).fill = g_fill
+                st.download_button("📥 Clean Audited Excel डाउनलोड करें", data=out.getvalue(), file_name="mandi_clean.xlsx")
+
+# MODULE 3: DOUBT SOLVER
+elif mode == "🧮 हिसाब समझें (Doubt Solver)":
+    st.subheader("🔍 किसी भी जोड़ या कटौती को समझें")
+    f_d = st.file_uploader("पर्ची की फोटो डालें", type=["jpg", "jpeg", "png", "pdf"], key="d_solv")
+    query_m = st.text_input("क्या समझना है?", placeholder="उदा. कुल 48,200 कैसे आया? दर और हमाली समझाएं।")
+    if f_d and query_m and st.button("🧠 पूरा हिसाब खोलकर बताएं"):
+        with st.spinner("हिसाब तोड़ा जा रहा है..."):
+            res = run_ai([f"Explain mandi calculation in Hindi step-by-step for: {query_m}", build_part(load_img(f_d))])
+            st.markdown(res.text)
+
+# MODULE 4: 2-DOCUMENT FORENSIC MATCHER
+else:
+    st.subheader("🔍 दो पर्चियों/चालानों का 100% सटीक मिलान")
+    c1, c2 = st.columns(2)
+    with c1: f1 = st.file_uploader("Document 1", type=["jpg", "jpeg", "png", "pdf"], key="f1")
+    with c2: f2 = st.file_uploader("Document 2", type=["jpg", "jpeg", "png", "pdf"], key="f2")
+    if f1 and f2 and st.button("बारीक मिलान करें (Forensic Cross-Check)"):
+        with st.spinner("0.0001% अंतर खोजा जा रहा है..."):
+            p_comp = "Compare Doc 1 and Doc 2 strictly. Highlight any mismatch in red HTML span. Provide comparison table."
+            res = run_ai([p_comp, build_part(load_img(f1)), build_part(load_img(f2))])
+            st.markdown(res.text, unsafe_allow_html=True)
+    
