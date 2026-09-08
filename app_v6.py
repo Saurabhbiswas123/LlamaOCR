@@ -12,8 +12,8 @@ from datetime import datetime
 import pypdfium2 as pdfium
 from openpyxl.styles import PatternFill, Font
 
-st.set_page_config(page_title="Mandi AI Master Suite", layout="wide")
-st.title("🌾 Mandi AI: Enterprise OCR, Excel Audit & Genie Suite")
+st.set_page_config(page_title="Mandi AI Exact Format Excel", layout="wide")
+st.title("🌾 Mandi AI: Exact-Format OCR & Color-Coded Audit Suite")
 
 api_key = st.secrets.get("GEMINI_API_KEY")
 if not api_key:
@@ -35,8 +35,7 @@ def run_ai(contents, config=None):
 
 STORAGE = "vault_files"
 INDEX = "vault_index.json"
-for f in ["Truck_Logistics", "Mandi_Parchi", "Invoices_Bills"]:
-    os.makedirs(os.path.join(STORAGE, f), exist_ok=True)
+os.makedirs(STORAGE, exist_ok=True)
 
 def load_v():
     if os.path.exists(INDEX):
@@ -75,7 +74,7 @@ with st.sidebar:
             st.success("Saved!")
     st.divider()
     mode = st.radio("Navigation:", [
-        "📤 World-Class OCR & Excel Audit",
+        "📤 Exact-Format OCR to Clean Excel",
         "⚡ Genie Siri Voice Call",
         "💬 SMS / Text Chat",
         "🧮 Math Doubt Solver",
@@ -85,26 +84,25 @@ with st.sidebar:
 v_sum = json.dumps(vault.get("documents", []), ensure_ascii=False)
 rules_txt = "\n".join(vault.get("rules", []))
 
-# MODULE 1: OCR & EXCEL
-if mode == "📤 World-Class OCR & Excel Audit":
-    st.subheader("📤 Deep OCR & Color-Coded Excel Audit")
-    up_file = st.file_uploader("Parchi / Bill Dalein", type=["jpg", "jpeg", "png", "pdf"])
+# MODULE 1: EXACT FORMAT OCR & EXCEL AUDIT
+if mode == "📤 Exact-Format OCR to Clean Excel":
+    st.subheader("📤 Exact-Format OCR & Red Highlight Audit")
+    up_file = st.file_uploader("Parchi / Bill Dalein (Image/PDF)", type=["jpg", "jpeg", "png", "pdf"])
 
     if up_file:
         src = load_img(up_file)
-        if st.button("🚀 Run OCR & Audit"):
-            with st.spinner("Processing deep OCR..."):
-                p = """Extract all line items into JSON:
+        if st.button("🚀 Extract & Generate Exact Excel"):
+            with st.spinner("Reading original format without extra columns..."):
+                p = """Extract ONLY the actual columns present in this document (e.g., Party Name, Weight, Rate, Amount). 
+                Do not add any external or calculation columns inside the extracted records. Return clean JSON:
                 {
-                  "category": "Mandi_Parchi",
+                  "columns": ["Party Name", "Weight", "Rate", "Amount"],
                   "records": [
                     {
-                      "party_name": "Name",
-                      "weight": 25.0,
-                      "rate": 2100.0,
-                      "written_amount": 52500.0,
-                      "doubt_flag": false,
-                      "box_2d": [ymin, xmin, ymax, xmax]
+                      "Party Name": "Anand M",
+                      "Weight": 59.7,
+                      "Rate": 2100.0,
+                      "Amount": 125370.0
                     }
                   ]
                 }
@@ -112,37 +110,55 @@ if mode == "📤 World-Class OCR & Excel Audit":
                 try:
                     res = run_ai([p, prep_img(src)], config=types.GenerateContentConfig(response_mime_type="application/json", temperature=0.1))
                     data = json.loads(res.text.strip().replace("```json","").replace("```",""))
-                    st.session_state["recs"] = data.get("records", [])
+                    st.session_state["raw_cols"] = data.get("columns", [])
+                    st.session_state["raw_recs"] = data.get("records", [])
                     st.session_state["img"] = src
-                    st.success("Extracted Successfully!")
+                    st.success("Extracted in exact format!")
                 except Exception as e:
                     st.error(e)
 
-        if "recs" in st.session_state:
-            df = pd.DataFrame(st.session_state["recs"])
-            calcs, statuses = [], []
-            for _, r in df.iterrows():
-                w = float(re.sub(r"[^\d.]", "", str(r.get("weight", 0))) or 0)
-                rt = float(re.sub(r"[^\d.]", "", str(r.get("rate", 0))) or 0)
-                wa = float(re.sub(r"[^\d.]", "", str(r.get("written_amount", 0))) or 0)
-                ca = round(w * rt, 2)
-                calcs.append(ca)
-                if wa > 0 and abs(ca - wa) > 1.0:
-                    statuses.append("🔴 CALC MISMATCH")
-                else:
-                    statuses.append("✅ 100% OK")
-            df["CALCULATED"] = calcs
-            df["STATUS"] = statuses
+        if "raw_recs" in st.session_state:
+            df = pd.DataFrame(st.session_state["raw_recs"])
+            
+            # Audit check without altering user columns
+            error_rows = []
+            for idx, r in df.iterrows():
+                vals = [str(v) for v in r.values]
+                # Check if weight * rate != amount if those keys exist
+                try:
+                    w_key = next((c for c in df.columns if 'weight' in c.lower() or 'wazan' in c.lower()), None)
+                    r_key = next((c for c in df.columns if 'rate' in c.lower() or 'bhav' in c.lower()), None)
+                    a_key = next((c for c in df.columns if 'amount' in c.lower() or 'total' in c.lower() or 'amt' in c.lower() or 'written' in c.lower()), None)
+                    if w_key and r_key and a_key:
+                        w = float(re.sub(r"[^\d.]", "", str(r[w_key])) or 0)
+                        rt = float(re.sub(r"[^\d.]", "", str(r[r_key])) or 0)
+                        am = float(re.sub(r"[^\d.]", "", str(r[a_key])) or 0)
+                        if w > 0 and rt > 0 and am > 0 and abs(round(w*rt, 2) - am) > 1.0:
+                            error_rows.append(idx)
+                except Exception:
+                    pass
 
             c1, c2 = st.columns(2)
             with c1:
                 st.image(st.session_state["img"], width="stretch")
             with c2:
-                ed = st.data_editor(df, width="stretch")
+                st.write("**Exact Format Data View:**")
+                st.dataframe(df, width="stretch")
+
+                # Generate Clean Excel with Red Highlight on mismatched rows
                 out = io.BytesIO()
                 with pd.ExcelWriter(out, engine="openpyxl") as w:
-                    ed.to_excel(w, index=False, sheet_name="Audit")
-                st.download_button("📥 Download Excel", data=out.getvalue(), file_name="audited.xlsx")
+                    df.to_excel(w, index=False, sheet_name="Mandi_Data")
+                    ws = w.sheets["Mandi_Data"]
+                    red_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+                    red_font = Font(color="9C0006", bold=True)
+                    for err_idx in error_rows:
+                        excel_row = err_idx + 2  # header is row 1
+                        for col_idx in range(1, len(df.columns) + 1):
+                            ws.cell(row=excel_row, column=col_idx).fill = red_fill
+                            ws.cell(row=excel_row, column=col_idx).font = red_font
+
+                st.download_button("📥 Download Exact-Format Excel (.xlsx)", data=out.getvalue(), file_name="mandi_exact_format.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 # MODULE 2: SIRI VOICE
 elif mode == "⚡ Genie Siri Voice Call":
@@ -216,4 +232,4 @@ else:
         with st.spinner("Matching..."):
             res = run_ai(["Compare Doc 1 and Doc 2 strictly and highlight mismatches in red.", prep_img(load_img(d1)), prep_img(load_img(d2))])
             st.markdown(res.text, unsafe_allow_html=True)
-            
+                    
